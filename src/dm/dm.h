@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <hre/config.h>
 
 #ifdef LTSMIN_CONFIG_INCLUDED
 #include <dm/bitvector.h>
