@@ -1,0 +1,160 @@
+%include {
+#include <hre/config.h>
+#include <assert.h>
+#include <stdlib.h>
+
+#include <hre-io/stream.h>
+#include <hre/user.h>
+#include <hre/stringindex.h>
+#include <util-lib/chunk_support.h>
+#include <ltsmin-lib/exp-parse-env.h>
+#include <ltsmin-lib/exp-syntax.h>
+#include <ltsmin-lib/exp-grammar.h>
+}
+
+/* Section common parser configuration.
+
+This section is shared by the parsers for all LTSmin languages.
+*/
+
+%name expParse
+%token_prefix TOKEN_
+%token_type { int }
+%syntax_error {
+    (void)yymajor;(void)yyminor;
+    if (env->lineno == 0) {
+        HREmessage(error,"syntax error near pos %d",env->linepos+1);
+    } else {
+        HREmessage(error,"syntax error near line %d, pos %d",env->lineno+1,env->linepos+1);
+    }
+}
+%parse_failure { HREabort(0); }
+%parse_accept { Warning(infoLong,"success!"); }
+%extra_argument { exp_parse_env_t env }
+%stack_overflow {
+    (void)yypMinor;
+    Abort("stack overflow");
+}
+
+/* Section EXP grammar
+
+This section contains the grammar definition of EXP.
+*/
+
+input ::= exp_spec(E) . {
+    Warning(infoLong,"parsing finished");
+    env->model = E;
+    Warning(debug,"EXP model has %d processes", E->num_processes);
+    Warning(debug,"EXP model has %d syncronization rules", E->num_sync_rules);
+}
+input ::= ERROR . {
+    Abort("The error token is meant to give the lexer a way of passing the error.");
+}
+
+exp_spec(E) ::= PAR sync_section(S) IN proc_section(P) PAR END . {
+    E = RTmalloc(sizeof(struct exp_model_s));
+    E->num_processes = expListLength(P);
+    E->processes = (exp_model_t*) expListToArray(P);
+    E->num_sync_rules = expListLength(S);
+    E->sync_rules = (char***) expListToArray(S);
+}
+exp_spec(E) ::= DES LPAR NUMBER(INITIAL_STATE) COMMA NUMBER(num_transitions) COMMA NUMBER(num_states) RPAR trans_list(Tr) . {
+    string_index_t** transitions = RTmalloc(sizeof(string_index_t**) * num_states);
+    list_t current = Tr;
+    transition_t current_trans = current->item;
+    while(current) {
+        if(!transitions[current_trans->source]) {
+            transitions[current_trans->source] = RTmalloc(sizeof(string_index_t*) * num_states);
+        }
+        if(!transitions[current_trans->source][current_trans->destination]) {
+            transitions[current_trans->source][current_trans->destination] = SIcreate();
+        }
+        SIput(transitions[current_trans->source][current_trans->destination], current_trans->label);
+        current = current->prev;
+    }
+    E = RTmalloc(sizeof(struct exp_model_s));
+    E->num_processes = 0;
+    E->process_states = num_states;
+    E->process_transitions = num_transitions;
+    E->initial_state = INITIAL_STATE;
+    E->transitions = transitions;
+
+}
+exp_spec(E) ::= STRING(filename) . {
+
+    FILE *in = fopen( SIget(env->strings, filename), "r" );
+    if(in == NULL) {
+        Abort("The referenced file could not be opened: %s", SIget(env->strings, filename));
+    }
+    exp_parse_env_t env2 = EXPParseEnvCreate();
+    exp_parse_stream(TOKEN_DES, env2, stream_input(in));
+    E = env2->model;
+}
+
+exp_spec ::= error . {
+    HREprintf (error, "EXP syntax error.\n");
+    HREabort(0);
+}
+
+sync_section(L) ::= sync_section(A) sync_rule(B) . { L = expAddList(A,B); }
+sync_section(L) ::= . { L = NULL; }
+sync_rule(R) ::= actions(A) ARROW action(B) . {
+    list_t action_list = expAddList(A,B);
+    R = (char**) expListToArray(action_list);
+}
+actions(L) ::= actions(A) STAR action(B) . { L = expAddList(A,B); }
+actions(L) ::= action(A) . { L = expAddList(NULL,A); }
+action(A) ::= UNDERSCORE . { A = NULL; }
+action(A) ::= STRING(B) . { A = SIget(env->strings, B); }
+
+proc_section(L) ::= proc_section(A) BARS process(B) . { L = expAddList(A,B); }
+proc_section(L) ::= process(A) . { L = expAddList(NULL,A); }
+process(A) ::= exp_spec(B) . { A = B; }
+
+
+trans_list(L) ::= trans_list(A) trans(T) . { L = expAddList(A,T); }
+trans_list(L) ::= . { L = NULL; }
+trans(Tr) ::= LPAR NUMBER(S) COMMA STRING(A) COMMA NUMBER(T) RPAR . {
+    transition_t trans = RTmalloc(sizeof(struct transition_s));
+    trans->source = S;
+    trans->label = SIget(env->strings, A);
+    trans->destination = T;
+    Tr = trans;
+}
+
+%type exp_spec { exp_model_t }
+%destructor exp_spec {
+    if($$->sync_rules)
+        RTfree($$->sync_rules);
+    if($$->processes)
+        RTfree($$->processes);
+    if($$->transitions)
+        RTfree($$->transitions);
+}
+
+%type sync_section { list_t }
+%destructor sync_section { expListFree($$); }
+%type sync_rule { char** }
+%destructor sync_rule { RTfree($$); }
+%type actions { list_t }
+%destructor actions { expListFree($$); }
+%type action { char* }
+%destructor action { if($$) {RTfree($$);} }
+
+%type proc_section { list_t }
+%destructor proc_section { expListFree($$); }
+%type process { exp_model_t }
+%type trans_list { list_t }
+%destructor trans_list { expListFree($$); }
+%type trans { transition_t }
+%destructor trans { RTfree($$->label); RTfree($$); }
+
+
+%left ARROW .
+%left STAR .
+
+%left BARS .
+
+/* generates a special USER token so that the user knows the value of the last reserved token */
+/* must be at the end of the file */
+%left USER
