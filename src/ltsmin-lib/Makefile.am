@@ -41,15 +41,21 @@ libmucalc_la_SOURCES += mucalc-lexer.l
 libmucalc_la_SOURCES += mucalc-grammar.c mucalc-grammar.h
 
 # lemon parser
-EXTRA_DIST  = ltsmin-lexer.c ltsmin-lexer.h
+EXTRA_DIST  = exp-lexer.c exp-lexer.h
+EXTRA_DIST += ltsmin-lexer.c ltsmin-lexer.h
 EXTRA_DIST += mucalc-lexer.c mucalc-lexer.h
 
-BUILT_SOURCES  = ltsmin-grammar.c ltsmin-grammar.h
+BUILT_SOURCES  = exp-grammar.c exp-grammar.h
+BUILT_SOURCES += exp-lexer.c exp-lexer.h
+BUILT_SOURCES += ltsmin-grammar.c ltsmin-grammar.h
 BUILT_SOURCES += ltsmin-lexer.c ltsmin-lexer.h
 BUILT_SOURCES += mucalc-grammar.c mucalc-grammar.h
 BUILT_SOURCES += mucalc-lexer.c mucalc-lexer.h
 
 CLEANFILES =
+CLEANFILES += exp-grammar.c exp-grammar.h
+CLEANFILES += exp-lexer.c exp-lexer.h
+CLEANFILES += exp-grammar.out
 CLEANFILES += ltsmin-grammar.c ltsmin-grammar.h
 CLEANFILES += ltsmin-lexer.c ltsmin-lexer.h
 CLEANFILES += ltsmin-grammar.out
