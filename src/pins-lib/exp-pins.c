@@ -1,8 +1,6 @@
 #include <hre/user.h>
 #include <pins-lib/exp-pins.h>
 #include <ltsmin-lib/exp-syntax.h>
-#include <hre-io/stream.h>
-#include <ltsmin-lib/lts-type.h>
 
 
 static void exp_popt(poptContext con,
@@ -49,28 +47,15 @@ typedef struct greybox_context {
 } *gb_context_t;
 
 void EXPloadGreyboxModel(model_t model, const char *filename) {
-
-    FILE *fp;
-    char stmp[32];
-
-    FILE *in=fopen( filename, "r" );
-    if (in == NULL) {
-        AbortCall ("Unable to open file ``%s''", filename);
+    exp_model_t exp_model = exp_parse_stream(filename);
+    printf("Model has %d processes and %d sync rules\n", exp_model->num_processes, exp_model->num_sync_rules);
+    if(exp_model->num_processes == 0) {
+        printf("Process has %d states and %d transitions\n", exp_model->process_states, exp_model->process_transitions);
     }
-    exp_parse_env_t env = EXPParseEnvCreate();
-//    LTSminKeyword(env,TOKEN_END,"end");
-//    LTSminKeyword(env,TOKEN_PAR,"par");
-//    LTSminKeyword(env,TOKEN_IN,"in");
-//    LTSminBinaryOperator(env,TOKEN_STAR,"*",4);
-//    LTSminBinaryOperator(env,TOKEN_ARROW,"->",6);
-//    LTSminKeyword(env,TOKEN_UNDERSCORE,"_");
-//    LTSminBinaryOperator(env,TOKEN_BARS,"||", 5);
-//    LTSminKeyword(env,TOKEN_DES,"des");
-//    LTSminKeyword(env,TOKEN_LPAR,"(");
-//    LTSminKeyword(env,TOKEN_RPAR,")");
-//    LTSminKeyword(env,TOKEN_COMMA,",");
-//    LTSminKeyword(env,TOKEN_QUOTE,"\"");
-//    exp_parse_stream(TOKEN_PAR, env, stream_input(in));
+    for(int i = 0; i < exp_model->num_processes; i++) {
+        printf("Process %d has %d states and %d transitions\n", i, exp_model->processes[i].process_states, exp_model->processes[i].process_transitions);
+    }
+    exit(0);
 
     gb_context_t ctx=(gb_context_t)RTmalloc(sizeof(struct greybox_context));
     GBsetContext(model,ctx);

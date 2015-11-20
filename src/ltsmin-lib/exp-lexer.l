@@ -4,6 +4,8 @@
 %option nodefault noyywrap reentrant noyyalloc noyyrealloc noyyfree batch noinput
 %option extra-type="exp_parse_env_t"
 %{
+#include <assert.h>
+
 #include <hre/config.h>
 #include <hre/user.h>
 #include <hre-io/user.h>
@@ -30,14 +32,12 @@ void   yyfree (void * ptr, void * yyscanner){
 #pragma GCC diagnostic ignored "-Wsign-compare"
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 
-#define YY_INPUT(buf,result,max_size) \
-    { result = stream_read_max(yyextra->input, buf , max_size ) ; }
-
 %}
 
 white_space [ \t]+
 number      [0-9]+
 string      \"(([[:print:]]{-}[\\\"])|"\\\\"|"\\\"")*\"
+action      [A-Za-z][A-Za-z0-9_]*
 operator    [~!@<>=\-+/?&\\|*\[\]]+
 endofline   (\n|\r|\n\r|\r\n)
 
@@ -113,10 +113,16 @@ endofline   (\n|\r|\n\r|\r\n)
     // trim the quote characters
     yytext[strlen(yytext) - 1] = '\0';
     char* str = yytext + sizeof(char);
-    // unescape escaped strings
     int value = SIput(yyextra->strings, str);
     //Print(infoLong, "lexer: STRING: %s %s (%d)", str, unescaped, value);
     expParse(yyextra->parser,TOKEN_STRING,value,yyextra);
+}
+
+{action} {
+    yyextra->linepos+=strlen(yytext);
+    int value = SIput(yyextra->strings, yytext);
+    //Print(infoLong, "lexer: STRING: %s %s (%d)", str, unescaped, value);
+    expParse(yyextra->parser,TOKEN_ACTION,value,yyextra);
 }
 
 {number} {
@@ -133,8 +139,8 @@ endofline   (\n|\r|\n\r|\r\n)
 
 . {
     yyextra->linepos++;
-    HREmessage(error,"Unexpected character %s (%x) at line %d, pos %d",
-          yytext,yytext[0],yyextra->lineno+1,yyextra->linepos+1);
+    HREmessage(error,"%s: Unexpected character %s (%x) at line %d, pos %d",
+          yyextra->filename, yytext,yytext[0],yyextra->lineno+1,yyextra->linepos+1);
     expParse(yyextra->parser,TOKEN_ERROR,0,yyextra);
     /* Because the same lexer is used for multiple languages, we give the
        parser the opportunity to provide a sensible error message. */

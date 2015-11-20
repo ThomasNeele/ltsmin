@@ -13,13 +13,13 @@ typedef struct list_s *list_t;
 typedef struct transition_s *transition_t;
 
 struct exp_parse_env_s {
-    stream_t         input;
     void*            parser;
+    void*            scanner;
+    char*            filename;
     int              lineno;
     int              linepos;
     string_index_t   strings;
     exp_model_t      model;
-    char             buffer[ENV_BUFFER_SIZE];
 };
 
 struct exp_model_s {
@@ -28,13 +28,13 @@ struct exp_model_s {
     // Fields used when this a network
     unsigned int     num_sync_rules;
     char***          sync_rules;              //
-    exp_model_t*     processes;
+    struct exp_model_s*      processes;
 
     // Fields used when this is a process
     unsigned int     process_states;
     unsigned int     process_transitions;
     unsigned int     initial_state;
-    string_index_t** transitions;
+    char***          transitions;
 };
 
 struct list_s {
