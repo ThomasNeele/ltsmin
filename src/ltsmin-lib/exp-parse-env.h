@@ -11,6 +11,7 @@ typedef struct exp_parse_env_s *exp_parse_env_t;
 typedef struct exp_model_s *exp_model_t;
 typedef struct list_s *list_t;
 typedef struct transition_s *transition_t;
+typedef struct sync_action_number_s *sync_action_number_t;
 
 struct exp_parse_env_s {
     void*            parser;
@@ -24,6 +25,7 @@ struct exp_parse_env_s {
 
 struct exp_model_s {
     unsigned int     num_processes;          // 0 when this is a process, >0 when this is a network
+    string_index_t   action_labels;
 
     // Fields used when this a network
     unsigned int     num_sync_rules;
@@ -46,6 +48,11 @@ struct transition_s {
     unsigned int source;
     char*        label;
     unsigned int destination;
+};
+
+struct sync_action_number_s {
+    char*label;
+    unsigned int number;
 };
 
 #endif //LTSMIN_EXP_PARSE_ENV_H

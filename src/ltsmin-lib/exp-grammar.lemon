@@ -51,29 +51,40 @@ input ::= ERROR . {
     Abort("The error token is meant to give the lexer a way of passing the error.");
 }
 
-exp_spec(E) ::= PAR sync_section(S) IN proc_section(P) END PAR . {
+exp_spec(E) ::= PAR sync_actions(S) IN proc_section(P) END PAR . {
+    E = RTmalloc(sizeof(struct exp_model_s));
+    E->num_processes = expListLength(P);
+    E->processes = (struct exp_model_s*) expListToArray(P, sizeof(struct exp_model_s));
+    E->sync_rules = sync_actions_to_rules(S, E);
+    collect_action_labels(E);
+}
+exp_spec(E) ::= PAR USING sync_vectors(S) IN proc_section(P) END PAR . {
     E = RTmalloc(sizeof(struct exp_model_s));
     E->num_processes = expListLength(P);
     E->processes = (struct exp_model_s*) expListToArray(P, sizeof(struct exp_model_s));
     E->num_sync_rules = expListLength(S);
     E->sync_rules = (char***) expListToArray(S, sizeof(char**));
+    collect_action_labels(E);
 }
 exp_spec(E) ::= DES LPAR NUMBER(INITIAL_STATE) COMMA NUMBER(num_transitions) COMMA NUMBER(num_states) RPAR trans_list(Tr) . {
     char*** transitions = RTmalloc(sizeof(char**) * num_states);
     memset(transitions, 0, sizeof(char**) * num_states);
     list_t current = Tr;
+    string_index_t action_labels = SIcreate();
     while(current) {
         transition_t current_trans = current->item;
         if(transitions[current_trans->source] == NULL) {
             transitions[current_trans->source] = RTmalloc(sizeof(char*) * num_states);
         }
         transitions[current_trans->source][current_trans->destination] = current_trans->label;
+        SIput(action_labels, current_trans->label);
         list_t prev = current->prev;
         RTfree(current);
         current = prev;
     }
     E = RTmalloc(sizeof(struct exp_model_s));
     E->num_processes = 0;
+    E->action_labels = action_labels;
     E->process_states = num_states;
     E->process_transitions = num_transitions;
     E->initial_state = INITIAL_STATE;
@@ -89,12 +100,39 @@ exp_spec ::= error . {
     HREabort(0);
 }
 
-sync_section(L) ::= sync_section(A) sync_rule(B) . {
+sync_actions(L) ::= sync_actions(A) COMMA sync_action(B) . {
+    //struct sync_action_number_s** a = RTmalloc(sizeof(struct sync_action_number_s*));
+    //*a = B;
+    L = expAddList(A,B);
+}
+sync_actions(L) ::= sync_action(A) . {
+    //struct sync_action_number_s** a = RTmalloc(sizeof(struct sync_action_number_s*));
+    //*a = A;
+    L = expAddList(NULL, A);
+}
+sync_action(A) ::= ACTION(B) HASH NUMBER(C) . {
+    char* label = SIget(env->strings, B);
+    A = RTmalloc(sizeof(struct sync_action_number_s));
+    A->label = label;
+    A->number = C;
+}
+sync_action(A) ::= ACTION(B) . {
+    char* label = SIget(env->strings, B);
+    A = RTmalloc(sizeof(struct sync_action_number_s));
+    A->label = label;
+    A->number = 2;
+}
+
+sync_vectors(L) ::= sync_vectors(A) COMMA sync_rule(B) . {
     char*** a = RTmalloc(sizeof(char**));
     *a = B;
     L = expAddList(A,a);
 }
-sync_section(L) ::= . { L = NULL; }
+sync_vectors(L) ::= sync_rule(A) . {
+    char*** a = RTmalloc(sizeof(char**));
+    *a = A;
+    L = expAddList(NULL,a);
+}
 sync_rule(R) ::= actions(A) ARROW ACTION(B) . {
     char** a = RTmalloc(sizeof(char*));
     *a = SIget(env->strings, B);
@@ -130,8 +168,12 @@ trans(Tr) ::= LPAR NUMBER(S) COMMA STRING(A) COMMA NUMBER(T) RPAR . {
         RTfree($$->transitions);
 }
 
-%type sync_section { list_t }
-%destructor sync_section { expListFree($$); }
+%type sync_actions { list_t }
+%destructor sync_actions { expListFree($$); }
+%type sync_action { sync_action_number_t }
+%destructor sync_action { RTfree($$); }
+%type sync_vectors { list_t }
+%destructor sync_vectors { expListFree($$); }
 %type sync_rule { char** }
 %destructor sync_rule { RTfree($$); }
 %type actions { list_t }

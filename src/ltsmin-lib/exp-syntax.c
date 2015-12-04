@@ -92,3 +92,69 @@ void expListFree(list_t list) {
         current = prev;
     }
 }
+
+void collect_action_labels(exp_model_t model) {
+    model->action_labels = SIcreate();
+    for(int i = 0; i < model->num_sync_rules; i++) {
+        SIput(model->action_labels, model->sync_rules[i][model->num_processes]);
+    }
+    for(int i = 0; i < model->num_processes; i++) {
+        for(int j = 0; j < SIgetCount(model->processes[i].action_labels); j++) {
+            int is_sync_action = 0;
+            for (int k = 0; k < model->num_sync_rules; k++) {
+                if (model->sync_rules[k][i] != NULL && strcmp(model->sync_rules[k][i], SIget(model->processes[i].action_labels, j))) {
+                    is_sync_action = 1;
+                    break;
+                }
+            }
+            if(is_sync_action == 0) {
+                SIput(model->action_labels, SIget(model->processes[i].action_labels, j));
+            }
+        }
+    }
+}
+
+int num_ones(int a) {
+    int result = 0;
+    for(int i = 0; a != 0 && i < 32; i++) {
+        if(a & 1) {
+            result++;
+        }
+        a >>= 1;
+    }
+    return result;
+}
+
+char ***sync_actions_to_rules(list_t actions, exp_model_t model) {
+    list_t current = actions;
+    int process_index[model->num_processes];
+    int num_processes_with_action = 0;
+    list_t vector_list = NULL;
+    while(current) {
+        sync_action_number_t action = current->item;
+        for(int i = 0; i < model->num_processes; i++) {
+            if(SIlookup(model->processes[i].action_labels, action->label)) {
+                // Process contains this action
+                process_index[num_processes_with_action] = i;
+                num_processes_with_action++;
+            }
+        }
+        for(int i = 0; i < (1 << num_processes_with_action); i++) {
+            if(num_ones(i) == action->number) {
+                char** sync_vector = RTmalloc(sizeof(char*) * (model->num_processes + 1));
+                char*** sync_vector_address = RTmalloc(sizeof(char**));
+                *sync_vector_address = sync_vector;
+                for(int j = 0; j < num_processes_with_action; j++) {
+                    sync_vector[process_index[j]] = (i >> j) & 1 ? action->label : NULL;
+                }
+                sync_vector[model->num_processes] = action->label;
+                vector_list = expAddList(vector_list, sync_vector_address);
+            }
+        }
+        list_t prev = current->prev;
+        RTfree(current);
+        current = prev;
+    }
+    model->num_sync_rules = expListLength(vector_list);
+    return (char***) expListToArray(vector_list, sizeof(char**));
+}

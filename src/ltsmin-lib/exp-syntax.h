@@ -17,6 +17,9 @@ unsigned int expListLength(list_t list) ;
 void **expListToArray(list_t list, size_t item_size);
 void expListFree(list_t list);
 
+void collect_action_labels(exp_model_t model);
+char*** sync_actions_to_rules(list_t actions, exp_model_t model);
+
 extern void expParse(void*,int,int,exp_parse_env_t);
 extern void expParseTrace(FILE* filename, char* prompt);
 extern void *expParseAlloc(void *(*mallocProc)(size_t));

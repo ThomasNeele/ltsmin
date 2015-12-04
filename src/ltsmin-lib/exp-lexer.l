@@ -57,6 +57,11 @@ endofline   (\n|\r|\n\r|\r\n)
     expParse(yyextra->parser,TOKEN_PAR,0,yyextra);
 }
 
+"using" {
+    yyextra->linepos+=strlen(yytext);
+    expParse(yyextra->parser,TOKEN_USING,0,yyextra);
+}
+
 "in" {
     yyextra->linepos+=strlen(yytext);
     expParse(yyextra->parser,TOKEN_IN,0,yyextra);
@@ -65,6 +70,11 @@ endofline   (\n|\r|\n\r|\r\n)
 "end" {
     yyextra->linepos+=strlen(yytext);
     expParse(yyextra->parser,TOKEN_END,0,yyextra);
+}
+
+"#" {
+    yyextra->linepos+=strlen(yytext);
+    expParse(yyextra->parser,TOKEN_HASH,0,yyextra);
 }
 
 "*" {
