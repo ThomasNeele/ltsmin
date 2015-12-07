@@ -133,7 +133,7 @@ char ***sync_actions_to_rules(list_t actions, exp_model_t model) {
     while(current) {
         sync_action_number_t action = current->item;
         for(int i = 0; i < model->num_processes; i++) {
-            if(SIlookup(model->processes[i].action_labels, action->label)) {
+            if(SIlookup(model->processes[i].action_labels, action->label) != SI_INDEX_FAILED) {
                 // Process contains this action
                 process_index[num_processes_with_action] = i;
                 num_processes_with_action++;
