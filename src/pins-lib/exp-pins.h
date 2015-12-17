@@ -13,10 +13,7 @@
 
 extern struct poptOption exp_options[];
 
-int determine_state_length(exp_model_t model, int *numNetworkNodes, int *numProcesses);
-void network_to_array(exp_model_t model, exp_model_t *processes, int *processCounter);
-//int getInitialState(exp_model_t model, int *init_state, int offset_bits);
-void collect_edge_labels(exp_model_t model, int *processCounter, int *labelCount, char ***names);
+static exp_model_t exp_flatten_network(exp_model_t model);
 
 int exp_next_long(model_t self, int group, int *src, TransitionCB cb, void *user_context);
 /**
