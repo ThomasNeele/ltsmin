@@ -9,7 +9,15 @@ exp_parse_env_t EXPParseEnvCreate() {
 }
 
 void EXPParseEnvDestroy(exp_parse_env_t env) {
-    SIdestroy(&env->strings);
+//    SIdestroy(&env->strings);
+    RTfree(*(void**)((char*)env->strings + sizeof(array_manager_t) + 2*sizeof(int)));
+    RTfree(*(void**)((char*)env->strings + sizeof(array_manager_t) + 2*sizeof(int) + sizeof(int*)));
+    RTfree(*(void**)((char*)env->strings + sizeof(array_manager_t) + 2*sizeof(int) + 2*sizeof(int*)));
+    RTfree(*(void**)((char*)env->strings + sizeof(array_manager_t) + 2*sizeof(int) + 2*sizeof(int*) + sizeof(char**)));
+//    RTfree((void*)(env->strings + sizeof(array_manager_t) + 2*sizeof(int) + sizeof(int*)));
+//    RTfree((void*)(env->strings + sizeof(array_manager_t) + 2*sizeof(int) + 2*sizeof(int*)));
+//    RTfree((void*)(env->strings + sizeof(array_manager_t) + 2*sizeof(int) + 2*sizeof(int*) + sizeof(char**)));
+    RTfree(env->strings);
     RTfree(env);
 }
 
@@ -93,7 +101,7 @@ void expListFree(list_t list) {
     }
 }
 
-void collect_action_labels(exp_model_t model) {
+void exp_collect_action_labels(exp_model_t model) {
     model->action_labels = SIcreate();
     for(int i = 0; i < model->num_sync_rules; i++) {
         SIput(model->action_labels, model->sync_rules[i][model->num_processes]);
@@ -102,7 +110,7 @@ void collect_action_labels(exp_model_t model) {
         for(int j = 0; j < SIgetCount(model->processes[i].action_labels); j++) {
             int is_sync_action = 0;
             for (int k = 0; k < model->num_sync_rules; k++) {
-                if (model->sync_rules[k][i] != NULL && strcmp(model->sync_rules[k][i], SIget(model->processes[i].action_labels, j))) {
+                if (model->sync_rules[k][i] != NULL && strcmp(model->sync_rules[k][i], SIget(model->processes[i].action_labels, j)) == 0) {
                     is_sync_action = 1;
                     break;
                 }
@@ -112,6 +120,25 @@ void collect_action_labels(exp_model_t model) {
             }
         }
     }
+}
+
+char*exp_get_gate(char *label) {
+    int i = 0;
+    while(label[i] != '!' && label[i] != '?' && label[i] != ' ' && label[i] != '\t' && label[i] != '(' && label[i] != '\0') {
+        i++;
+    }
+    char* result = RTmalloc(sizeof(char) * (i+1));
+    strncpy(result, label, (size_t) i);
+    result[i] = '\0';
+    return result;
+}
+
+char* exp_get_offers(char* label) {
+    char* offers = strpbrk(label, "!? (\t");
+    if(offers == NULL) {
+        offers = "";
+    }
+    return offers;
 }
 
 int num_ones(int a) {
@@ -125,11 +152,11 @@ int num_ones(int a) {
     return result;
 }
 
-char ***sync_actions_to_rules(list_t actions, exp_model_t model) {
+char ***exp_sync_actions_to_rules(list_t actions, exp_model_t model) {
     list_t current = actions;
     int process_index[model->num_processes];
-    int num_processes_with_action = 0;
     list_t vector_list = NULL;
+    int num_processes_with_action = 0;
     while(current) {
         sync_action_number_t action = current->item;
         for(int i = 0; i < model->num_processes; i++) {
@@ -138,6 +165,9 @@ char ***sync_actions_to_rules(list_t actions, exp_model_t model) {
                 process_index[num_processes_with_action] = i;
                 num_processes_with_action++;
             }
+        }
+        if(action->number > num_processes_with_action) {
+            Abort("Sync rule \"%s\" cannot be applied", action->label);
         }
         for(int i = 0; i < (1 << num_processes_with_action); i++) {
             if(num_ones(i) == action->number) {
@@ -154,7 +184,58 @@ char ***sync_actions_to_rules(list_t actions, exp_model_t model) {
         list_t prev = current->prev;
         RTfree(current);
         current = prev;
+        num_processes_with_action = 0;
+
     }
     model->num_sync_rules = expListLength(vector_list);
     return (char***) expListToArray(vector_list, sizeof(char**));
+}
+
+void exp_print_model(FILE *stream, exp_model_t model, int indent_level) {
+    char tabs[indent_level + 1];
+    for(int i = 0; i < indent_level; i++ ) {
+        tabs[i] = '\t';
+    }
+    tabs[indent_level] = '\0';
+
+    if(model->num_processes == 0) {
+        fprintf(stream, tabs);
+        fprintf(stream, "des (%d, %d, %d)\n", model->initial_state, model->process_transitions, model->process_states);
+        for(int i = 0; i < model->process_states; i++) {
+            for(int j = 0; j < model->process_states; j++) {
+                if(model->transitions[i] != NULL && model->transitions[i][j] != NULL) {
+                    fprintf(stream, tabs);
+                    fprintf(stream, "\t(%d, \"%s\", %d)\n", i, model->transitions[i][j], j);
+                }
+            }
+        }
+    } else {
+        fprintf(stream, tabs);
+        fprintf(stream, "par using\n");
+        for (int i = 0; i < model->num_sync_rules; i++) {
+            fprintf(stream, "%s\t", tabs);
+            for (int j = 0; j < model->num_processes + 1; j++) {
+                fprintf(stream, "%s ", model->sync_rules[i][j] != NULL ? model->sync_rules[i][j] : "_");
+                if (j < model->num_processes - 1) {
+                    fprintf(stream, "* ");
+                } else if (j < model->num_processes) {
+                    fprintf(stream, "-> ");
+                } else if (i < model->num_sync_rules - 1){
+                    fprintf(stream, ",");
+                }
+            }
+            fprintf(stream, "\n");
+        }
+        fprintf(stream, tabs);
+        fprintf(stream, "in\n");
+        for (int i = 0; i < model->num_processes; i++) {
+            exp_print_model(stream, &model->processes[i], indent_level + 1);
+            if (i < model->num_processes - 1) {
+                fprintf(stream, tabs);
+                fprintf(stream, "||\n");
+            }
+        }
+        fprintf(stream, tabs);
+        fprintf(stream, "end par\n");
+    }
 }

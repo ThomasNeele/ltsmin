@@ -55,8 +55,8 @@ exp_spec(E) ::= PAR sync_actions(S) IN proc_section(P) END PAR . {
     E = RTmalloc(sizeof(struct exp_model_s));
     E->num_processes = expListLength(P);
     E->processes = (struct exp_model_s*) expListToArray(P, sizeof(struct exp_model_s));
-    E->sync_rules = sync_actions_to_rules(S, E);
-    collect_action_labels(E);
+    E->sync_rules = exp_sync_actions_to_rules(S, E);
+    exp_collect_action_labels(E);
 }
 exp_spec(E) ::= PAR USING sync_vectors(S) IN proc_section(P) END PAR . {
     E = RTmalloc(sizeof(struct exp_model_s));
@@ -64,20 +64,29 @@ exp_spec(E) ::= PAR USING sync_vectors(S) IN proc_section(P) END PAR . {
     E->processes = (struct exp_model_s*) expListToArray(P, sizeof(struct exp_model_s));
     E->num_sync_rules = expListLength(S);
     E->sync_rules = (char***) expListToArray(S, sizeof(char**));
-    collect_action_labels(E);
+    exp_collect_action_labels(E);
 }
 exp_spec(E) ::= DES LPAR NUMBER(INITIAL_STATE) COMMA NUMBER(num_transitions) COMMA NUMBER(num_states) RPAR trans_list(Tr) . {
-    char*** transitions = RTmalloc(sizeof(char**) * num_states);
-    memset(transitions, 0, sizeof(char**) * num_states);
+    char*** transitions = RTmallocZero(sizeof(char**) * num_states);
     list_t current = Tr;
     string_index_t action_labels = SIcreate();
     while(current) {
         transition_t current_trans = current->item;
         if(transitions[current_trans->source] == NULL) {
-            transitions[current_trans->source] = RTmalloc(sizeof(char*) * num_states);
+            transitions[current_trans->source] = RTmallocZero(sizeof(char*) * num_states);
         }
-        transitions[current_trans->source][current_trans->destination] = current_trans->label;
-        SIput(action_labels, current_trans->label);
+        if(transitions[current_trans->source][current_trans->destination]) {
+            char* appended_label = RTmalloc(sizeof(char) * strlen(transitions[current_trans->source][current_trans->destination]) + 2 + strlen(current_trans->label));
+            sprintf(appended_label, "%s\x1f%s", transitions[current_trans->source][current_trans->destination], current_trans->label);
+            if(strchr(transitions[current_trans->source][current_trans->destination], '\x1f')) {
+                // This is an appended string, so it can be freed
+                RTfree(transitions[current_trans->source][current_trans->destination]);
+            }
+            transitions[current_trans->source][current_trans->destination] = appended_label;
+        } else {
+            transitions[current_trans->source][current_trans->destination] = current_trans->label;
+        }
+        SIput(action_labels, exp_get_gate(current_trans->label));
         list_t prev = current->prev;
         RTfree(current);
         current = prev;
@@ -101,13 +110,9 @@ exp_spec ::= error . {
 }
 
 sync_actions(L) ::= sync_actions(A) COMMA sync_action(B) . {
-    //struct sync_action_number_s** a = RTmalloc(sizeof(struct sync_action_number_s*));
-    //*a = B;
     L = expAddList(A,B);
 }
 sync_actions(L) ::= sync_action(A) . {
-    //struct sync_action_number_s** a = RTmalloc(sizeof(struct sync_action_number_s*));
-    //*a = A;
     L = expAddList(NULL, A);
 }
 sync_action(A) ::= ACTION(B) HASH NUMBER(C) . {
@@ -151,6 +156,13 @@ proc_section(L) ::= exp_spec(A) . { L = expAddList(NULL,A); }
 trans_list(L) ::= trans_list(A) trans(T) . { L = expAddList(A,T); }
 trans_list(L) ::= . { L = NULL; }
 trans(Tr) ::= LPAR NUMBER(S) COMMA STRING(A) COMMA NUMBER(T) RPAR . {
+    transition_t trans = RTmalloc(sizeof(struct transition_s));
+    trans->source = S;
+    trans->label = SIget(env->strings, A);
+    trans->destination = T;
+    Tr = trans;
+}
+trans(Tr) ::= LPAR NUMBER(S) COMMA ACTION(A) COMMA NUMBER(T) RPAR . {
     transition_t trans = RTmalloc(sizeof(struct transition_s));
     trans->source = S;
     trans->label = SIget(env->strings, A);

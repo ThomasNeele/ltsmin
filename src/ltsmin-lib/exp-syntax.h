@@ -17,11 +17,15 @@ unsigned int expListLength(list_t list) ;
 void **expListToArray(list_t list, size_t item_size);
 void expListFree(list_t list);
 
-void collect_action_labels(exp_model_t model);
-char*** sync_actions_to_rules(list_t actions, exp_model_t model);
+void exp_collect_action_labels(exp_model_t model);
+char***exp_sync_actions_to_rules(list_t actions, exp_model_t model);
+char*exp_get_gate(char *label);
+char*exp_get_offers(char* label);
 
 extern void expParse(void*,int,int,exp_parse_env_t);
 extern void expParseTrace(FILE* filename, char* prompt);
 extern void *expParseAlloc(void *(*mallocProc)(size_t));
 extern void expParseFree(void *p,void (*freeProc)(void*));
+
+void exp_print_model(FILE* stream, exp_model_t model, int indent_level);
 #endif //LTSMIN_EXP_SYNTAX_H
