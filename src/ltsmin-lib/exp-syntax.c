@@ -103,22 +103,29 @@ void expListFree(list_t list) {
 
 void exp_collect_action_labels(exp_model_t model) {
     model->action_labels = SIcreate();
-    for(int i = 0; i < model->num_sync_rules; i++) {
-        SIput(model->action_labels, model->sync_rules[i][model->num_processes]);
-    }
+//    for(int i = 0; i < model->num_sync_rules; i++) {
+//        SIput(model->action_labels, model->sync_rules[i][model->num_processes]);
+//    }
     for(int i = 0; i < model->num_processes; i++) {
         for(int j = 0; j < SIgetCount(model->processes[i].action_labels); j++) {
-            int is_sync_action = 0;
-            for (int k = 0; k < model->num_sync_rules; k++) {
-                if (model->sync_rules[k][i] != NULL && strcmp(model->sync_rules[k][i], SIget(model->processes[i].action_labels, j)) == 0) {
-                    is_sync_action = 1;
-                    break;
-                }
-            }
-            if(is_sync_action == 0) {
+//            int is_sync_action = 0;
+//            for (int k = 0; k < model->num_sync_rules; k++) {
+//                if (model->sync_rules[k][i] != NULL && strcmp(model->sync_rules[k][i], SIget(model->processes[i].action_labels, j)) == 0) {
+//                    is_sync_action = 1;
+//                    break;
+//                }
+//            }
+//            if(is_sync_action == 0) {
                 SIput(model->action_labels, SIget(model->processes[i].action_labels, j));
-            }
+//            }
         }
+    }
+}
+
+void exp_collect_gates(exp_model_t model) {
+    model->action_gates = SIcreate();
+    for(int i = 0; i < SIgetCount(model->action_labels); i++) {
+        SIput(model->action_gates, exp_get_gate(SIget(model->action_labels, i)));
     }
 }
 
@@ -160,7 +167,7 @@ char ***exp_sync_actions_to_rules(list_t actions, exp_model_t model) {
     while(current) {
         sync_action_number_t action = current->item;
         for(int i = 0; i < model->num_processes; i++) {
-            if(SIlookup(model->processes[i].action_labels, action->label) != SI_INDEX_FAILED) {
+            if(SIlookup(model->processes[i].action_gates, action->label) != SI_INDEX_FAILED) {
                 // Process contains this action
                 process_index[num_processes_with_action] = i;
                 num_processes_with_action++;

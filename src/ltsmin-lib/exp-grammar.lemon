@@ -57,6 +57,7 @@ exp_spec(E) ::= PAR sync_actions(S) IN proc_section(P) END PAR . {
     E->processes = (struct exp_model_s*) expListToArray(P, sizeof(struct exp_model_s));
     E->sync_rules = exp_sync_actions_to_rules(S, E);
     exp_collect_action_labels(E);
+    exp_collect_gates(E);
 }
 exp_spec(E) ::= PAR USING sync_vectors(S) IN proc_section(P) END PAR . {
     E = RTmalloc(sizeof(struct exp_model_s));
@@ -65,6 +66,7 @@ exp_spec(E) ::= PAR USING sync_vectors(S) IN proc_section(P) END PAR . {
     E->num_sync_rules = expListLength(S);
     E->sync_rules = (char***) expListToArray(S, sizeof(char**));
     exp_collect_action_labels(E);
+    exp_collect_gates(E);
 }
 exp_spec(E) ::= DES LPAR NUMBER(INITIAL_STATE) COMMA NUMBER(num_transitions) COMMA NUMBER(num_states) RPAR trans_list(Tr) . {
     char*** transitions = RTmallocZero(sizeof(char**) * num_states);
@@ -86,7 +88,7 @@ exp_spec(E) ::= DES LPAR NUMBER(INITIAL_STATE) COMMA NUMBER(num_transitions) COM
         } else {
             transitions[current_trans->source][current_trans->destination] = current_trans->label;
         }
-        SIput(action_labels, exp_get_gate(current_trans->label));
+        SIput(action_labels, current_trans->label);
         list_t prev = current->prev;
         RTfree(current);
         current = prev;
@@ -98,6 +100,7 @@ exp_spec(E) ::= DES LPAR NUMBER(INITIAL_STATE) COMMA NUMBER(num_transitions) COM
     E->process_transitions = num_transitions;
     E->initial_state = INITIAL_STATE;
     E->transitions = transitions;
+    exp_collect_gates(E);
 
 }
 exp_spec(E) ::= STRING(filename) . {

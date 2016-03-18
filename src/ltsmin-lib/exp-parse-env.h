@@ -26,6 +26,7 @@ struct exp_parse_env_s {
 struct exp_model_s {
     unsigned int     num_processes;          // 0 when this is a process, >0 when this is a network
     string_index_t   action_labels;
+    string_index_t   action_gates;
 
     // Fields used when this a network
     unsigned int     num_sync_rules;

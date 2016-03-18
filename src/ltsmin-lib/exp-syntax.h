@@ -18,6 +18,7 @@ void **expListToArray(list_t list, size_t item_size);
 void expListFree(list_t list);
 
 void exp_collect_action_labels(exp_model_t model);
+void exp_collect_gates(exp_model_t model);
 char***exp_sync_actions_to_rules(list_t actions, exp_model_t model);
 char*exp_get_gate(char *label);
 char*exp_get_offers(char* label);
