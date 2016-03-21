@@ -13,7 +13,7 @@ PINS_LIBS += ../spg-lib/libspg.la
 
 VSET_LIBS = ../vset-lib/libvset.la
 
-bin_PROGRAMS = etf2lts-sym pins2lts-sym
+bin_PROGRAMS = etf2lts-sym pins2lts-sym exp2lts-sym
 
 if HAVE_LIBSTEP_INFO
 bin_PROGRAMS += lpo2lts-sym
@@ -48,6 +48,14 @@ etf2lts_sym_LDADD     = $(PINS_LIBS) $(VSET_LIBS)
 etf2lts_sym_CPPFLAGS  = -DETF $(SYM_CPP_FLAGS)
 etf2lts_sym_LDFLAGS   = $(SYM_LDFLAGS)
 nodist_EXTRA_etf2lts_sym_SOURCES = automake-force-linker.cxx # req. by vset
+
+# exp2lts-sym
+exp2lts_sym_SOURCES   = pins2lts-sym.c
+exp2lts_sym_SOURCES  += ../pins-lib/exp-pins.c ../pins-lib/exp-pins.h
+exp2lts_sym_LDADD     = $(PINS_LIBS) $(VSET_LIBS)
+exp2lts_sym_CPPFLAGS  = -DEXP $(SYM_CPP_FLAGS)
+exp2lts_sym_LDFLAGS   = $(SYM_LDFLAGS)
+nodist_EXTRA_exp2lts_sym_SOURCES = automake-force-linker.cxx # req. by vset
 
 # pins2lts-sym
 pins2lts_sym_SOURCES   = pins2lts-sym.c

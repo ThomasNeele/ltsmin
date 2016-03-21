@@ -16,7 +16,7 @@ MC_LIBS	+= $(PINS_LIBS)
 SUBDIRS  = parallel
 SUBDIRS += algorithm
 
-bin_PROGRAMS  = etf2lts-mc pins2lts-mc
+bin_PROGRAMS  = etf2lts-mc pins2lts-mc exp2lts-mc
 
 if HAVE_LIBSTEP_INFO
 bin_PROGRAMS += lpo2lts-mc
@@ -49,6 +49,12 @@ etf2lts_mc_SOURCES   = $(mc_sources)
 etf2lts_mc_SOURCES  += ../pins-lib/etf-pins.c ../pins-lib/etf-pins.h
 etf2lts_mc_LDADD     = $(MC_LIBS) 
 etf2lts_mc_CPPFLAGS  = -DETF $(MC_CPPFLAGS)
+
+# exp2lts-mc
+exp2lts_mc_SOURCES   = $(mc_sources)
+exp2lts_mc_SOURCES  += ../pins-lib/exp-pins.c ../pins-lib/exp-pins.h
+exp2lts_mc_LDADD     = $(MC_LIBS)
+exp2lts_mc_CPPFLAGS  = -DEXP $(MC_CPPFLAGS)
 
 # pins2lts-mc
 pins2lts_mc_SOURCES   = $(mc_sources)
