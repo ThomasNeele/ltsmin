@@ -178,7 +178,7 @@ char ***exp_sync_actions_to_rules(list_t actions, exp_model_t model) {
         }
         for(int i = 0; i < (1 << num_processes_with_action); i++) {
             if(num_ones(i) == action->number) {
-                char** sync_vector = RTmalloc(sizeof(char*) * (model->num_processes + 1));
+                char** sync_vector = RTmallocZero(sizeof(char*) * (model->num_processes + 1));
                 char*** sync_vector_address = RTmalloc(sizeof(char**));
                 *sync_vector_address = sync_vector;
                 for(int j = 0; j < num_processes_with_action; j++) {

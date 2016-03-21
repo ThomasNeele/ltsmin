@@ -173,7 +173,7 @@ static exp_model_t exp_flatten_network(exp_model_t model) {
                 }
             }
             if(!rule_is_blocked) {
-                char** new_rule = RTmallocZero(sizeof(char*) * (model->num_processes + 1));
+                char** new_rule = RTmallocZero(sizeof(char*) * (num_processes + 1));
                 char*** new_rule_p = RTmalloc(sizeof(char**));
                 *new_rule_p = new_rule;
                 for(int k = 0; k < model->processes[i].num_processes; k++) {
