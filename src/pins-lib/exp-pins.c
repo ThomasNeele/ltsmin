@@ -73,12 +73,12 @@ static exp_model_t exp_flatten_network(exp_model_t model) {
     exp_model_t flat_processes = RTmalloc(sizeof(struct exp_model_s) * num_processes);
     int process_counter = 0;
     for(int i = 0; i < model->num_processes; i++) {
-        if(model->processes[i].num_processes == 0) {
-            flat_processes[process_counter] = model->processes[i];
+        if(processes[i]->num_processes == 0) {
+            memcpy(&flat_processes[process_counter], processes[i], sizeof(struct exp_model_s));
             process_counter++;
         } else {
-            for (int j = 0; j < model->processes[i].num_processes; j++) {
-                flat_processes[process_counter] = model->processes[i].processes[j];
+            for (int j = 0; j < processes[i]->num_processes; j++) {
+                memcpy(&flat_processes[process_counter], &processes[i]->processes[j], sizeof(struct exp_model_s));
                 process_counter++;
             }
         }
