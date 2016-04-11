@@ -1,3 +1,4 @@
+#include <hre/config.h>
 #include <hre/stringindex.h>
 #include <hre/user.h>
 #include <pins-lib/exp-pins.h>
@@ -25,13 +26,13 @@ struct poptOption exp_options[]= {
         POPT_TABLEEND
 };
 
-typedef struct trans_s {
+typedef struct exp_trans_s {
     int num;
     char** label;
     int* dest;
-} *trans_t ;
+} *exp_trans_t ;
 
-typedef struct pins_ctx {
+typedef struct exp_pins_ctx_s {
     exp_model_t      model;
     /** Collection of syncing gates for each process */
     string_index_t*  sync_gates;
@@ -47,8 +48,8 @@ typedef struct pins_ctx {
     /** Collection of offers for each sync rule */
     string_index_t*  sync_offers;
     /** transitions */
-    trans_t** transitions;
-} *pins_ctx_t ;
+    exp_trans_t** transitions;
+} *exp_pins_ctx_t ;
 
 static exp_model_t exp_flatten_network(exp_model_t model) {
     int is_flat = 1;
@@ -212,7 +213,7 @@ static exp_model_t exp_flatten_network(exp_model_t model) {
     return result;
 }
 
-int exp_matching_offers(char *a, char *b) {
+static int exp_matching_offers(char *a, char *b) {
     if(a == NULL || b == NULL) {
         return 0;
     } else {
@@ -232,7 +233,7 @@ int exp_matching_offers(char *a, char *b) {
     }
 }
 
-int exp_matching_gate(char* a, char* b) {
+static int exp_matching_gate(char* a, char* b) {
     if(a == NULL || b == NULL) {
         return 0;
     } else {
@@ -244,7 +245,7 @@ int exp_matching_gate(char* a, char* b) {
     }
 }
 
-void exp_next_label(char** label) {
+static void exp_next_label(char** label) {
     *label = strchr(*label, '\x1f');
     if(*label) {
         (*label)++;
@@ -255,14 +256,14 @@ void exp_next_label(char** label) {
  * Return number of transitions found
  */
 int exp_next_long(model_t self, int group, int *src, TransitionCB cb, void *user_context) {
-    pins_ctx_t context = GBgetContext(self);
+    exp_pins_ctx_t context = GBgetContext(self);
     exp_model_t model = context->model;
     transition_info_t ti = GB_TI(NULL, group);
     int dst[model->num_processes];
     int num_transitions = 0;
 
     if(group < model->num_processes) {
-        trans_t trans = context->transitions[group][src[group]];
+        exp_trans_t trans = context->transitions[group][src[group]];
         for (int i = 0; i < trans->num; i++) {
             char* label = trans->label[i];
             while(label) {
@@ -296,7 +297,7 @@ int exp_next_long(model_t self, int group, int *src, TransitionCB cb, void *user
             if(model->sync_rules[rule_number][i] != NULL) {
                 target_states[process_counter] = RTmalloc(sizeof(int) * model->processes[i].process_states);
                 int num_enabled = 0;
-                trans_t trans = context->transitions[i][src[i]];
+                exp_trans_t trans = context->transitions[i][src[i]];
                 for (int j = 0; j < trans->num; j++) {
                     char* label = trans->label[j];
                     while(label) {
@@ -389,7 +390,7 @@ int exp_next_long(model_t self, int group, int *src, TransitionCB cb, void *user
     return num_transitions;
 }
 
-void print_string_index(string_index_t si) {
+static void print_string_index(string_index_t si) {
     printf("{");
     for(int i = 0; i < SIgetCount(si); i++) {
         printf("%s, ", SIget(si, i));
@@ -398,10 +399,10 @@ void print_string_index(string_index_t si) {
 }
 
 int exp_label_long(model_t self, int label, int* src) {
-    pins_ctx_t context = GBgetContext(self);
+    exp_pins_ctx_t context = GBgetContext(self);
     exp_model_t model = context->model;
     if(label < model->num_processes) {
-        trans_t trans = context->transitions[label][src[label]];
+        exp_trans_t trans = context->transitions[label][src[label]];
         for(int i = 0; i < trans->num; i++) {
             char *trans_label = trans->label[i];
             while (trans_label) {
@@ -417,7 +418,7 @@ int exp_label_long(model_t self, int label, int* src) {
         int proc_nr = label % model->num_processes;
         int rule_nr = context->label_index[label / model->num_processes];
         int offer_nr = label / model->num_processes - context->group_offset[rule_nr];
-        trans_t trans = context->transitions[proc_nr][src[proc_nr]];
+        exp_trans_t trans = context->transitions[proc_nr][src[proc_nr]];
         for(int i = 0; i < trans->num; i++) {
             char *trans_label = trans->label[i];
             while (trans_label) {
@@ -433,8 +434,8 @@ int exp_label_long(model_t self, int label, int* src) {
     return 0;
 }
 
-void exp_get_labels_group(model_t self,sl_group_enum_t group, int*src,int *label) {
-    pins_ctx_t context = GBgetContext(self);
+static void exp_get_labels_group(model_t self,sl_group_enum_t group, int*src,int *label) {
+    exp_pins_ctx_t context = GBgetContext(self);
     exp_model_t model = context->model;
     if (group == GB_SL_GUARDS || group == GB_SL_ALL) {
         for (int i = 0; i < context->num_labels; i++) {
@@ -443,7 +444,7 @@ void exp_get_labels_group(model_t self,sl_group_enum_t group, int*src,int *label
     }
 }
 
-string_index_t* exp_collect_sync_offers(exp_model_t model) {
+static string_index_t* exp_collect_sync_offers(exp_model_t model) {
     string_index_t* sync_offers = RTmalloc(sizeof(string_index_t) * model->num_sync_rules);
     for(int i = 0; i < model->num_sync_rules; i++) {
         sync_offers[i] = SIcreate();
@@ -458,7 +459,7 @@ string_index_t* exp_collect_sync_offers(exp_model_t model) {
     return sync_offers;
 }
 
-void exp_action_to_group_guard(pins_ctx_t context, char* action, int process, int to_guard, int* result) {
+static void exp_action_to_group_guard(exp_pins_ctx_t context, char* action, int process, int to_guard, int* result) {
     exp_model_t model = context->model;
     if(SIlookup(context->sync_gates[process], exp_get_gate(action)) != SI_INDEX_FAILED) {
         // Action is a sync action
@@ -483,7 +484,7 @@ void exp_action_to_group_guard(pins_ctx_t context, char* action, int process, in
     }
 }
 
-int guard_to_group(pins_ctx_t context, int guard) {
+static int guard_to_group(exp_pins_ctx_t context, int guard) {
     exp_model_t model = context->model;
     if(guard >= model->num_processes) {
         return (guard - model->num_processes) / model->num_processes + model->num_processes;
@@ -492,11 +493,11 @@ int guard_to_group(pins_ctx_t context, int guard) {
     }
 }
 
-void make_context_trans(exp_model_t model, pins_ctx_t context) {
-    context->transitions = RTmalloc(sizeof(trans_t*) * model->num_processes);
+static void make_context_trans(exp_model_t model, exp_pins_ctx_t context) {
+    context->transitions = RTmalloc(sizeof(exp_trans_t*) * model->num_processes);
     for(int i = 0; i < model->num_processes; i++) {
-        context->transitions[i] = RTmalloc(sizeof(trans_t) * model->processes[i].process_states);
-        trans_t* trans = context->transitions[i];
+        context->transitions[i] = RTmalloc(sizeof(exp_trans_t) * model->processes[i].process_states);
+        exp_trans_t* trans = context->transitions[i];
         for(int j = 0; j < model->processes[i].process_states; j++) {
             int num_succ = 0;
             if(model->processes[i].transitions[j]) {
@@ -506,7 +507,7 @@ void make_context_trans(exp_model_t model, pins_ctx_t context) {
                     }
                 }
             }
-            trans[j] = RTmalloc(sizeof(struct trans_s));
+            trans[j] = RTmalloc(sizeof(struct exp_trans_s));
             trans[j]->num = num_succ;
             trans[j]->label = RTmalloc(sizeof(char*) * num_succ);
             trans[j]->dest = RTmalloc(sizeof(int) * num_succ);
@@ -528,7 +529,7 @@ void EXPloadGreyboxModel(model_t model, const char *filename) {
     exp_model_t exp_model = exp_parse_stream(filename);
     exp_model = exp_flatten_network(exp_model);
 
-    pins_ctx_t context = RTmalloc(sizeof(struct pins_ctx));
+    exp_pins_ctx_t context = RTmalloc(sizeof(struct exp_pins_ctx_s));
     context->sync_offers = exp_collect_sync_offers(exp_model);
     context->group_offset = RTmalloc(sizeof(int) * (exp_model->num_sync_rules + 1));
     int offset = 0;
@@ -665,7 +666,7 @@ void EXPloadGreyboxModel(model_t model, const char *filename) {
             string_index_t enabled[exp_model->processes[i].process_states];
             for(int j = 0; j < exp_model->processes[i].process_states; j++) {
                 enabled[j] = SIcreate();
-                trans_t trans = context->transitions[i][j];
+                exp_trans_t trans = context->transitions[i][j];
                 for(int k = 0; k < trans->num; k++) {
                     char* action = trans->label[k];
                     while(action) {
@@ -692,7 +693,7 @@ void EXPloadGreyboxModel(model_t model, const char *filename) {
                         dm_set(mc, atoi(SIget(enabled[j], k)), atoi(SIget(enabled[j], l)));
                     }
                 }
-                trans_t trans = context->transitions[i][j];
+                exp_trans_t trans = context->transitions[i][j];
                 for(int k = 0; k < trans->num; k++) {
                     char* action = trans->label[k];
                     if(action) {
