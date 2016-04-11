@@ -59,6 +59,17 @@ exp_spec(E) ::= PAR sync_actions(S) IN proc_section(P) END PAR . {
     exp_collect_action_labels(E);
     exp_collect_gates(E);
 }
+
+exp_spec(E) ::= PAR IN proc_section(P) END PAR . {
+    E = RTmalloc(sizeof(struct exp_model_s));
+    E->num_processes = expListLength(P);
+    E->processes = (struct exp_model_s*) expListToArray(P, sizeof(struct exp_model_s));
+    E->sync_rules = RTmallocZero(sizeof(char**));
+    E->num_sync_rules = 0;
+    exp_collect_action_labels(E);
+    exp_collect_gates(E);
+}
+
 exp_spec(E) ::= PAR USING sync_vectors(S) IN proc_section(P) END PAR . {
     E = RTmalloc(sizeof(struct exp_model_s));
     E->num_processes = expListLength(P);
@@ -95,6 +106,7 @@ exp_spec(E) ::= DES LPAR NUMBER(INITIAL_STATE) COMMA NUMBER(num_transitions) COM
     }
     E = RTmalloc(sizeof(struct exp_model_s));
     E->num_processes = 0;
+    E->num_sync_rules = 0;
     E->action_labels = action_labels;
     E->process_states = num_states;
     E->process_transitions = num_transitions;
