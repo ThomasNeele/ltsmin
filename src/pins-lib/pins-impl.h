@@ -16,9 +16,6 @@
 #if defined(ETF)
 #include <pins-lib/etf-pins.h>
 #endif
-#if defined(EXP)
-#include <pins-lib/exp-pins.h>
-#endif
 #if defined(DIVINE)
 #include <pins-lib/dve-pins.h>
 #endif
@@ -59,12 +56,6 @@
 #endif
 #if defined(ETF)
 #define SPEC_POPT_OPTIONS { NULL, 0, POPT_ARG_INCLUDE_TABLE, etf_options, 0, "ETF options", NULL }
-#define SPEC_MT_SAFE 1
-#define SPEC_REL_PERF 100
-#define SPEC_MAYBE_AND_FALSE_IS_FALSE 0
-#endif
-#if defined(EXP)
-#define SPEC_POPT_OPTIONS { NULL, 0, POPT_ARG_INCLUDE_TABLE, exp_options, 0, "EXP options", NULL }
 #define SPEC_MT_SAFE 1
 #define SPEC_REL_PERF 100
 #define SPEC_MAYBE_AND_FALSE_IS_FALSE 0

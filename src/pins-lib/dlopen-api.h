@@ -6,8 +6,6 @@
 \file dlopen-api.h
 */
 
-#include <hre/config.h>
-
 #include <popt.h>
 #ifdef LTSMIN_CONFIG_INCLUDED
 #include <pins-lib/pins.h>
