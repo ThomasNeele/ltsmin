@@ -209,10 +209,11 @@ void exp_print_model(FILE *stream, exp_model_t model, int indent_level) {
         fprintf(stream, tabs);
         fprintf(stream, "des (%d, %d, %d)\n", model->initial_state, model->process_transitions, model->process_states);
         for(int i = 0; i < model->process_states; i++) {
-            for(int j = 0; j < model->process_states; j++) {
-                if(model->transitions[i] != NULL && model->transitions[i][j] != NULL) {
+            if(model->transitions[i]) {
+                for (int j = 0; j < model->transitions[i]->num; j++) {
                     fprintf(stream, tabs);
-                    fprintf(stream, "\t(%d, \"%s\", %d)\n", i, model->transitions[i][j], j);
+                    fprintf(stream, "\t(%d, \"%s\", %d)\n", i, model->transitions[i]->label[j],
+                            model->transitions[i]->dest[j]);
                 }
             }
         }

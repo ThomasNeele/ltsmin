@@ -23,6 +23,12 @@ struct exp_parse_env_s {
     exp_model_t      model;
 };
 
+typedef struct exp_trans_s {
+    int num;
+    char** label;
+    int* dest;
+} *exp_trans_t ;
+
 struct exp_model_s {
     unsigned int     num_processes;          // 0 when this is a process, >0 when this is a network
     string_index_t   action_labels;
@@ -37,7 +43,7 @@ struct exp_model_s {
     unsigned int     process_states;
     unsigned int     process_transitions;
     unsigned int     initial_state;
-    char***          transitions;
+    exp_trans_t*     transitions;
 };
 
 struct list_s {

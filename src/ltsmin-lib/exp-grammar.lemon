@@ -80,24 +80,35 @@ exp_spec(E) ::= PAR USING sync_vectors(S) IN proc_section(P) END PAR . {
     exp_collect_gates(E);
 }
 exp_spec(E) ::= DES LPAR NUMBER(INITIAL_STATE) COMMA NUMBER(num_transitions) COMMA NUMBER(num_states) RPAR trans_list(Tr) . {
-    char*** transitions = RTmallocZero(sizeof(char**) * num_states);
+    exp_trans_t* transitions = RTmallocZero(sizeof(exp_trans_t) * num_states);
     list_t current = Tr;
     string_index_t action_labels = SIcreate();
     while(current) {
         transition_t current_trans = current->item;
         if(transitions[current_trans->source] == NULL) {
-            transitions[current_trans->source] = RTmallocZero(sizeof(char*) * num_states);
+            transitions[current_trans->source] = RTmallocZero(sizeof(struct exp_trans_s));
         }
-        if(transitions[current_trans->source][current_trans->destination]) {
-            char* appended_label = RTmalloc(sizeof(char) * strlen(transitions[current_trans->source][current_trans->destination]) + 2 + strlen(current_trans->label));
-            sprintf(appended_label, "%s\x1f%s", transitions[current_trans->source][current_trans->destination], current_trans->label);
-            if(strchr(transitions[current_trans->source][current_trans->destination], '\x1f')) {
-                // This is an appended string, so it can be freed
-                RTfree(transitions[current_trans->source][current_trans->destination]);
+        int match_found = 0;
+        for(int i = 0; i < transitions[current_trans->source]->num; i++) {
+            if(transitions[current_trans->source]->dest[i] == current_trans->destination) {
+                // Extend the string
+                char* appended_label = RTmalloc(sizeof(char) * strlen(transitions[current_trans->source]->label[i]) + 2 + strlen(current_trans->label));
+                sprintf(appended_label, "%s\x1f%s", transitions[current_trans->source]->label[i], current_trans->label);
+                if(strchr(transitions[current_trans->source]->label[i], '\x1f')) {
+                    // This is an appended string, so it can be freed
+                    RTfree(transitions[current_trans->source]->label[i]);
+                }
+                transitions[current_trans->source]->label[i] = appended_label;
+                match_found = 1;
+                break;
             }
-            transitions[current_trans->source][current_trans->destination] = appended_label;
-        } else {
-            transitions[current_trans->source][current_trans->destination] = current_trans->label;
+        }
+        if(!match_found) {
+            transitions[current_trans->source]->label = RTrealloc(transitions[current_trans->source]->label, (transitions[current_trans->source]->num+1) * sizeof(char*));
+            transitions[current_trans->source]->dest = RTrealloc(transitions[current_trans->source]->dest, (transitions[current_trans->source]->num+1) * sizeof(int));
+            transitions[current_trans->source]->label[transitions[current_trans->source]->num] = current_trans->label;
+            transitions[current_trans->source]->dest[transitions[current_trans->source]->num] = current_trans->destination;
+            transitions[current_trans->source]->num++;
         }
         SIput(action_labels, current_trans->label);
         list_t prev = current->prev;
