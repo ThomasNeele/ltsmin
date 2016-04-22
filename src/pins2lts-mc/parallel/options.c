@@ -87,15 +87,15 @@ options_static_init      (model_t model, bool timed)
     }
 
     if (PINS_POR && (strategy[0] & Strat_LTL & ~Strat_DFSFIFO)) {
-        if (HREpeers(HREglobal()) > 1 && (strategy[0] & ~Strat_CNDFS))
+        if (HREpeers(HREglobal()) > 1 && (strategy[0] & ~(Strat_CNDFS|Strat_UFSCC)))
             Abort ("POR with more than one worker only works in CNDFS!");
         if (proviso == Proviso_None) {
             Warning (info, "Forcing use of the an ignoring proviso");
-            proviso = strategy[0] & Strat_CNDFS ? Proviso_CNDFS : Proviso_Stack;
+            proviso = strategy[0] & (Strat_CNDFS|Strat_UFSCC) ? Proviso_CNDFS : Proviso_Stack;
         }
         if (proviso != Proviso_ForceNone) {
-            if ((strategy[0] & Strat_CNDFS) && proviso != Proviso_CNDFS)
-                Abort ("Only the CNDFS proviso works in CNDFS (use --proviso=cndfs)!");
+            if ((strategy[0] & (Strat_CNDFS|Strat_UFSCC)) && proviso != Proviso_CNDFS)
+                Abort ("Only the CNDFS and UFSCC proviso works in CNDFS (use --proviso=cndfs)!");
             if ((strategy[0] & Strat_NDFS) && proviso != Proviso_Stack)
                 Abort ("Only the stack proviso works in NDFS!");
             if ( (strategy[0] & (Strat_OWCTY|Strat_LNDFS|Strat_ENDFS)) )
