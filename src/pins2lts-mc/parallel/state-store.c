@@ -141,7 +141,7 @@ state_store_init (model_t model, bool timed)
         store->local_bits += (~Strat_DFSFIFO & Strat_LTL & ~Strat_CNDFS & strategy[i++] ? 2 : 0);
     }
     store->count_bits = (Strat_LNDFS == strategy[i - 1] ? ceil (log2 (W + 1)) :
-            (Strat_CNDFS == strategy[i - 1] && PINS_POR ? 2 : 0) );
+            ((Strat_CNDFS|Strat_UFSCC & strategy[i - 1]) && PINS_POR ? 2 : 0) );
     store->count_mask = (1<<store->count_bits) - 1;
     size_t              bits = store->global_bits + store->count_bits;
 

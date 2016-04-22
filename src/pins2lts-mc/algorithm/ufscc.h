@@ -20,6 +20,8 @@
  * we use stackframes to denote levels in the stack (successors of a state are
  * pushed on a new stackframe).
  *
+ * Also support liveness-preserving POR by implementing the
+ * parallel cycle proviso (for details see reference in cndfs.h).
  *
  */
 

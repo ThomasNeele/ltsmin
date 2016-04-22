@@ -34,6 +34,7 @@
 #include <util-lib/fast_hash.h>
 
 struct si_internal_s {
+    state_data_t        last_deser;
     state_data_t        tmp_init; // temporary state storage for tree
     state_data_t        tmp_pins; // temporary storage for pins state
     streamer_t         *stack_serialize; // stream of (de)serializers to stack
@@ -90,6 +91,7 @@ tree_des (void *ctx, void *ptr, raw_data_t data)
 static inline void
 state_info_clear (state_info_t* si)
 {
+    si->in->last_deser = NULL;
     si->ref = DUMMY_IDX;
     si->lattice = LM_NULL_LATTICE;
     store_clear (si->in->store);
@@ -257,9 +259,20 @@ state_info_serialize (state_info_t *si, raw_data_t data)
 }
 
 void
+state_info_update (state_info_t *si)
+{
+    HREassert (si->ref != DUMMY_IDX);
+    HREassert (si->in->last_deser != NULL);
+    streamer_walk (si->in->stack_serialize, NULL, si->in->last_deser, SERIALIZE);
+    Debug ("Updated state %"PRIu32", %zu at %p",
+           MurmurHash32 (store_state(si->in->store), D*4, 0), si->ref, si->in->last_deser);
+}
+
+void
 state_info_deserialize (state_info_t *si, raw_data_t data)
 {
     state_info_clear (si);
+    si->in->last_deser = data;
     streamer_walk (si->in->stack_serialize, NULL, data, DESERIALIZE);
     Debug ("Deserialized state %"PRIu32", %zu at %p",
            MurmurHash32 (store_state(si->in->store), D*4, 0), si->ref, data);

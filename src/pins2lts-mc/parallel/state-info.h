@@ -38,6 +38,10 @@ extern void     state_info_serialize    (state_info_t *state, raw_data_t data);
 
 extern void     state_info_deserialize  (state_info_t *state, raw_data_t data);
 
+// Update the serialized state
+// at the location provided in the last deserialize call (should still exist!)
+void            state_info_update (state_info_t *si);
+
 extern int      state_info_new_state    (state_info_t *state, state_data_t data,
                                          transition_info_t *ti, state_info_t *src);
 

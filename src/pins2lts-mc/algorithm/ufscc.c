@@ -1,5 +1,5 @@
 /**
- *
+ * TODO: move +1's and -1's inside the UF structure!
  */
 
 #include <hre/config.h>
@@ -20,8 +20,12 @@
 #include <gperftools/profiler.h>
 #endif
 
-
-// TODO: move +1's and -1's inside the UF structure!
+typedef enum par_cycle_proviso_e {
+    UNKNOWN       = 0,
+    VIOLABLE      = 1, // globally not fully expanded (won race)
+    INVIOLABLE    = 2, // globally fully expanded (en(s) == por(s) or globally won race)
+    LOCAL_CYCLE   = 3  // locally found cycle
+} par_cycle_proviso_t;
 
 /**
  * local counters
@@ -51,6 +55,11 @@ struct alg_local_s {
     uint32_t            target_acc;           // acceptance info for target
     uint32_t            root_acc;             // acceptance info for root
     wctx_t             *rctx;                 // reachability for trace construction
+
+    // Parallel cycle proviso for POR
+    par_cycle_proviso_t state_prov;           // POR proviso for ctx->state
+    par_cycle_proviso_t target_prov;          // POR proviso info for target
+    fset_t             *fset;
 };
 
 
@@ -93,7 +102,7 @@ ufscc_local_init (run_t *run, wctx_t *ctx)
     ctx->local->target = state_info_create ();
     ctx->local->root   = state_info_create ();
 
-    // extend state with TGBA acceptance marks information
+    // extend stacked states with TGBA acceptance marks information
     state_info_add_simple (ctx->state, sizeof (uint32_t),
                           &ctx->local->state_acc);
     state_info_add_simple (ctx->local->target, sizeof (uint32_t),
@@ -101,9 +110,22 @@ ufscc_local_init (run_t *run, wctx_t *ctx)
     state_info_add_simple (ctx->local->root, sizeof (uint32_t),
                           &ctx->local->root_acc);
 
-    size_t len               = state_info_serialize_int_size (ctx->state);
+    // extend stacked states state with parallel cycle proviso information
+    state_info_add_simple (ctx->state, sizeof (uint32_t),
+                          &ctx->local->state_prov);
+    state_info_add_simple (ctx->local->target, sizeof (uint32_t),
+                          &ctx->local->target_prov);
+
+    size_t          len = state_info_serialize_int_size (ctx->state);
+    HREassert (len == state_info_serialize_int_size (ctx->local->target));
     ctx->local->search_stack = dfs_stack_create (len);
-    ctx->local->roots_stack  = dfs_stack_create (len);
+    size_t          rlen = state_info_serialize_int_size (ctx->local->root);
+    ctx->local->roots_stack  = dfs_stack_create (rlen);
+
+    ctx->local->fset = NULL;
+    if (PINS_POR && proviso == Proviso_CNDFS) {
+        ctx->local->fset = fset_create (sizeof(ref_t), 0, 4, 24);
+    }
 
     ctx->local->cnt.scc_count               = 0;
     ctx->local->cnt.unique_states           = 0;
@@ -132,10 +154,13 @@ ufscc_local_deinit   (run_t *run, wctx_t *ctx)
 
     dfs_stack_destroy (loc->search_stack);
     dfs_stack_destroy (loc->roots_stack);
+
+    if (loc->fset != NULL) {
+        fset_free (loc->fset);
+    }
     RTfree (loc);
     (void) run;
 }
-
 
 static void
 ufscc_handle (void *arg, state_info_t *successor, transition_info_t *ti,
@@ -184,9 +209,21 @@ ufscc_handle (void *arg, state_info_t *successor, transition_info_t *ti,
         state_info_serialize (loc->target, stack_loc);
     }
 
+    // check proviso
+    if (PINS_POR && proviso == Proviso_CNDFS && loc->state_prov == UNKNOWN) {
+        if (ti->por_proviso != 0) { // state already fully expanded
+            loc->state_prov = INVIOLABLE;
+            state_store_try_set_counters (successor->ref, 2, UNKNOWN, INVIOLABLE);
+        } else if ((ctx->state->ref == successor->ref ||
+                   fset_find(loc->fset, NULL, &successor->ref, NULL, false))) {
+            loc->state_prov = LOCAL_CYCLE; // found cycle
+        }
+        // avoid full exploration (proviso is enforced later in backtrack)
+        ti->por_proviso = 1;
+    }
+
     (void) ti;
 }
-
 
 /**
  * make a stackframe on search_stack and handle the successors of ctx->state
@@ -200,15 +237,24 @@ explore_state (wctx_t *ctx)
     size_t              trans;
 
     // push the state on the roots stack
-    state_info_set (loc->root,  ctx->state->ref, LM_NULL_LATTICE);
+    state_info_set (loc->root, ctx->state->ref, LM_NULL_LATTICE);
     stack_loc = dfs_stack_push (loc->roots_stack, NULL);
     loc->root_acc = loc->state_acc;
     state_info_serialize (loc->root, stack_loc);
 
     increase_level (ctx->counters);
     dfs_stack_enter (loc->search_stack);
+    if (PINS_POR && proviso == Proviso_CNDFS) {
+        int res = fset_find (loc->fset, NULL, &ctx->state->ref, NULL, true);
+        HREassert (!res, "Table full? (%d)", res); // not found
+    }
 
+    loc->state_prov = state_store_get_wip (ctx->state->ref);
+    Debug ("Exploring %zu", ctx->state->ref);
     trans = permute_trans (ctx->permute, ctx->state, ufscc_handle, ctx);
+    if (PINS_POR && proviso == Proviso_CNDFS) {
+        state_info_update (ctx->state);
+    }
 
     ctx->counters->explored ++;
     run_maybe_report1 (ctx->run, ctx->counters, "");
@@ -216,6 +262,51 @@ explore_state (wctx_t *ctx)
     return trans;
 }
 
+static void
+reach_explore_all (wctx_t *ctx, state_info_t *state)
+{
+    alg_local_t        *loc = ctx->local;
+
+    permute_set_por (ctx->permute, 0);
+
+    dfs_stack_enter (loc->search_stack);
+    increase_level (ctx->counters);
+    permute_trans (ctx->permute, state, ufscc_handle, ctx);
+
+    permute_set_por (ctx->permute, 1);
+}
+
+static bool
+check_cndfs_proviso (wctx_t *ctx)
+{
+    alg_local_t        *loc = ctx->local;
+
+    if (PINS_POR == 0 || proviso != Proviso_CNDFS) return false;
+
+    // Only check proviso if the state is violable. It may be that
+    // the reduced successor set is already inviolable,
+    // implying that locally this thread visited all involatile successors
+    if (loc->state_prov == INVIOLABLE) {
+        return false;
+    }
+
+    switch (loc->state_prov) {
+    case UNKNOWN:       loc->state_prov = VIOLABLE;     break;
+    case LOCAL_CYCLE:   loc->state_prov = INVIOLABLE;   break;
+    case VIOLABLE:
+    case INVIOLABLE:
+    default:            HREassert ("Unexpected proviso state");
+    }
+
+    int success = state_store_try_set_counters (ctx->state->ref, 2, UNKNOWN, loc->state_prov);
+    if (( success && loc->state_prov == INVIOLABLE) ||
+        (!success && state_store_get_wip(ctx->state->ref) == INVIOLABLE)) {
+        loc->state_prov = INVIOLABLE;
+        state_info_update (ctx->state);
+        return true;
+    }
+    return false;
+}
 
 static void
 ufscc_init  (wctx_t *ctx)
@@ -233,6 +324,8 @@ ufscc_init  (wctx_t *ctx)
     // explore the initial state
     state_data = dfs_stack_top (loc->search_stack);
     state_info_deserialize (ctx->state, state_data); // search_stack TOP
+    loc->state_prov = UNKNOWN;
+    state_info_update (ctx->state);
     transitions = explore_state(ctx);
 
     loc->cnt.claimsuccess ++;
@@ -371,7 +464,7 @@ successor (wctx_t *ctx)
  * that the SCC is complete (and marked DEAD). We then pop states from the
  * roots stack to ensure that the SCC is completely removed from the stacks.
  */
-static inline void
+static inline bool
 backtrack (wctx_t *ctx)
 {
     alg_local_t        *loc           = ctx->local;
@@ -390,8 +483,18 @@ backtrack (wctx_t *ctx)
     state_data = dfs_stack_top (loc->search_stack);
     state_info_deserialize (ctx->state, state_data);
 
+    if (check_cndfs_proviso(ctx)) {
+        reach_explore_all (ctx, ctx->state);
+        return false;
+    }
+
     // remove the fully explored state from the search_stack
     dfs_stack_pop (loc->search_stack);
+    Debug ("Backtracking %zu", ctx->state->ref);
+    if (PINS_POR && proviso == Proviso_CNDFS) {
+        int res = fset_delete (loc->fset, NULL, &ctx->state->ref);
+        HREassert (res); // success
+    }
 
     // remove ctx->state from the list
     // (no other workers have to explore this state anymore)
@@ -409,7 +512,7 @@ backtrack (wctx_t *ctx)
     // - else:  use pick_from_list to determine if the SCC is completed
     if ( !is_last_state
          && uf_sameset (shared->uf, loc->target->ref + 1, ctx->state->ref + 1) ) {
-        return; // backtrack in same set
+        return true; // backtrack in same set
     }
 
     // ctx->state is the last KNOWN state in its SCC (according to this worker)
@@ -426,12 +529,12 @@ backtrack (wctx_t *ctx)
 
         // the SCC of the initial state has been marked DEAD ==> we are done!
         if (is_last_state) {
-            return;
+            return true;
         }
 
         // we may still have states on the stack of this SCC
         if ( uf_sameset (shared->uf, loc->target->ref + 1, ctx->state->ref + 1) ) {
-            return; // backtrack in same set 
+            return true; // backtrack in same set
             // (the state got marked dead AFTER the previous sameset check)
         }
 
@@ -445,15 +548,18 @@ backtrack (wctx_t *ctx)
             root_data = dfs_stack_top (loc->roots_stack);
             state_info_deserialize (loc->root, root_data); // R.TOP
         }
-    }
-    else {
+
+    } else {
+
         // Found w in List(v) ==> push w on stack and search its successors
         state_info_set (ctx->state, state_picked - 1, LM_NULL_LATTICE);
         state_data = dfs_stack_push (loc->search_stack, NULL);
         loc->state_acc = 0; // the acceptance marks should already be stored in the SCC
         state_info_serialize (ctx->state, state_data);
+
         explore_state (ctx);
     }
+    return true;
 }
 
 
@@ -462,6 +568,7 @@ ufscc_run  (run_t *run, wctx_t *ctx)
 {
     alg_local_t            *loc = ctx->local;
     raw_data_t              state_data;
+    bool                    success;
 
 #if HAVE_PROFILER
     if (ctx->id == 0)
@@ -491,7 +598,9 @@ ufscc_run  (run_t *run, wctx_t *ctx)
             if (0 == dfs_stack_nframes (loc->search_stack))
                 break;
 
-            backtrack (ctx);
+            success = backtrack (ctx);
+
+            if (!success) continue; // state requires continued exploration
         }
     }
 
@@ -504,6 +613,10 @@ ufscc_run  (run_t *run, wctx_t *ctx)
     if (trc_output && run_is_stopped(run) &&
             global->exit_status != LTSMIN_EXIT_COUNTER_EXAMPLE) {
         report_lasso (ctx, DUMMY_IDX); // aid other thread in counter-example reconstruction
+    }
+
+    if (PINS_POR && proviso == Proviso_CNDFS && !run_is_stopped(ctx->run)) {
+        HREassert (fset_count(loc->fset) == 0);
     }
 
     (void) run;
