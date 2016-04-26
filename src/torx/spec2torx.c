@@ -12,6 +12,7 @@
 #include <ltsmin-lib/ltsmin-standard.h>
 #include <pins-lib/pins.h>
 #include <pins-lib/pins-impl.h>
+#include <pins-lib/pins-util.h>
 #include <hre/stringindex.h>
 #include <util-lib/treedbs.h>
 
@@ -22,14 +23,6 @@ static struct poptOption options[] = {
      "PINS options", NULL},
     POPT_TABLEEND
 };
-
-static void *
-new_string_index (void *ctx)
-{
-    (void)ctx;
-    Warning (info, "creating a new string index");
-    return SIcreate ();
-}
 
 typedef struct {
     model_t             model;
@@ -53,7 +46,7 @@ torx_transition (void *arg, transition_info_t *ti, int *dst, int *cpy)
     int                 vis = 0;
     chunk               c;
     if (edge_labels > 0) {
-        c = GBchunkGet (ctx->model,
+        c = pins_chunk_get  (ctx->model,
                         lts_type_get_edge_label_typeno (ctx->ltstype, 0),
                         ti->labels[0]);
         if (c.len != strlen(LTSMIN_EDGE_VALUE_TAU) || strncmp (c.data, LTSMIN_EDGE_VALUE_TAU, c.len) != 0)
@@ -136,14 +129,9 @@ main (int argc, char *argv[])
 
     Warning (info, "loading model from %s", files[0]);
     model_t             model = GBcreateBase ();
-    GBsetChunkMethods (model, new_string_index, NULL,
-                       (int2chunk_t)SIgetC,
-                       (chunk2int_t)SIputC,
-                       (chunkatint_t)SIputCAt,
-                       (get_count_t)SIgetCount);
+    GBsetChunkMap (model, simple_table_factory_create());
 
-    GBloadFile (model, files[0]);
-    model = GBwrapModel(model);
+    GBloadFile (model, files[0], &model);
 
     lts_type_t          ltstype = GBgetLTStype (model);
     N = lts_type_get_state_length (ltstype);

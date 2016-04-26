@@ -73,6 +73,16 @@ MANPAGES += pbes2lts-seq.1
 MANPAGES += pbes2lts-dist.1
 MANPAGES += pbes2lts-mc.1
 
+MANPAGES += pnml2lts-sym.1
+MANPAGES += pnml2lts-seq.1
+MANPAGES += pnml2lts-dist.1
+MANPAGES += pnml2lts-mc.1
+
+MANPAGES += prob2lts-sym.1
+MANPAGES += prob2lts-seq.1
+MANPAGES += prob2lts-dist.1
+MANPAGES += prob2lts-mc.1
+
 MANPAGES += spgsolver.1
 
 doc_ASCIIDOC = $(addsuffix .txt, $(basename $(MANPAGES)))
@@ -109,6 +119,9 @@ extra_ASCIIDOC += inc/pins2lts-sym-options.txt
 extra_ASCIIDOC += inc/pins2lts-sym.txt
 extra_ASCIIDOC += inc/pins2torx.txt
 extra_ASCIIDOC += inc/plugin-options.txt
+extra_ASCIIDOC += inc/pnml.txt
+extra_ASCIIDOC += inc/prob.txt
+extra_ASCIIDOC += inc/prob-options.txt
 extra_ASCIIDOC += inc/prom.txt
 extra_ASCIIDOC += inc/reachability-options.txt
 extra_ASCIIDOC += inc/scoop-options.txt

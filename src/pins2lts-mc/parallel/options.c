@@ -6,7 +6,9 @@
 
 #include <stdlib.h>
 
-#include <pins-lib/pins2pins-por.h>
+#include <pins-lib/pins-util.h>
+#include <pins-lib/pins2pins-ltl.h>
+#include <pins-lib/por/pins2pins-por.h>
 #include <pins2lts-mc/algorithm/algorithm.h>
 #include <pins2lts-mc/algorithm/dfs-fifo.h>
 #include <pins2lts-mc/algorithm/ltl.h>
@@ -29,13 +31,16 @@ si_map_entry strategies[] = {
     {"map",     Strat_MAP},
     {"ecd",     Strat_ECD},
     {"dfsfifo", Strat_DFSFIFO},
+    {"tarjan",  Strat_TARJAN},
+    {"ufscc",   Strat_UFSCC},
+    {"renault", Strat_RENAULT},
     {NULL, 0}
 };
 
 si_map_entry provisos[] = {
     {"none",    Proviso_None},
     {"force-none",Proviso_ForceNone},
-    {"closed-set",  Proviso_ClosedSet},
+    {"closed-set",Proviso_ClosedSet},
     {"stack",   Proviso_Stack},
     {"cndfs",   Proviso_CNDFS},
     {NULL, 0}
@@ -46,6 +51,8 @@ strategy_t       strategy[MAX_STRATEGIES] =
 proviso_t        proviso = Proviso_None;
 char*            trc_output = NULL;
 int              write_state = 0;
+int              inhibit = 0;
+int              no_exit = 0;
 char*            label_filter = NULL;
 char            *files[2];
 
@@ -55,15 +62,21 @@ options_static_init      (model_t model, bool timed)
 {
     if (files[1]) {
         Print1 (info,"Writing output to %s", files[1]);
-        if (strategy[0] & ~Strat_PBFS) {
+        if (strategy[0] != Strat_PBFS) {
             Print1 (info,"Switching to PBFS algorithm for LTS write");
             strategy[0] = Strat_PBFS;
         }
     }
 
-    if (strategy[0] == Strat_None)
-        strategy[0] = (GBgetAcceptingStateLabelIndex(model) < 0 ?
-              (strategy[0] == Strat_TA ? Strat_SBFS : Strat_BFS) : Strat_CNDFS);
+    if (strategy[0] == Strat_None) {
+        if (pins_get_weak_ltl_progress_state_label_index(model) != -1 && !PINS_POR) {
+            strategy[0] = Strat_DFSFIFO;
+        } else if (pins_get_accepting_state_label_index(model) < 0) {
+            strategy[0] = timed ? Strat_SBFS : Strat_BFS;
+        } else {
+            strategy[0] = Strat_CNDFS;
+        }
+    }
 
     if (timed) {
         if (!(strategy[0] & (Strat_CNDFS|Strat_Reach)))
@@ -78,11 +91,11 @@ options_static_init      (model_t model, bool timed)
             Abort ("POR with more than one worker only works in CNDFS!");
         if (proviso == Proviso_None) {
             Warning (info, "Forcing use of the an ignoring proviso");
-            proviso = strategy[0] & ~Strat_CNDFS ? Proviso_CNDFS : Proviso_Stack;
+            proviso = strategy[0] & Strat_CNDFS ? Proviso_CNDFS : Proviso_Stack;
         }
         if (proviso != Proviso_ForceNone) {
             if ((strategy[0] & Strat_CNDFS) && proviso != Proviso_CNDFS)
-                Abort ("Only the CNDFS proviso works in CNDFS!");
+                Abort ("Only the CNDFS proviso works in CNDFS (use --proviso=cndfs)!");
             if ((strategy[0] & Strat_NDFS) && proviso != Proviso_Stack)
                 Abort ("Only the stack proviso works in NDFS!");
             if ( (strategy[0] & (Strat_OWCTY|Strat_LNDFS|Strat_ENDFS)) )
@@ -175,8 +188,8 @@ alg_popt (poptContext con, enum poptCallbackReason reason,
         char *strat = strdup (arg_strategy);
         char last;
         do {
-            if (i > 0 && !((Strat_ENDFS | Strat_OWCTY) & strategy[i-1]))
-                Abort ("Only ENDFS supports recursive repair procedures.");
+            if (i > 0 && !((Strat_ENDFS | Strat_OWCTY | Strat_UFSCC) & strategy[i-1]))
+                Abort ("Only ENDFS/OWCTY/UFSCC can use secondary search procedure procedures.");
             while (',' != arg_strategy[end] && '\0' != arg_strategy[end]) ++end;
             last = strat[end];
             strat[end] = '\0';
@@ -223,7 +236,8 @@ struct poptOption alg_options_extra[] = {
     {NULL, 0, POPT_ARG_INCLUDE_TABLE, perm_options, 0, "Permutation options", NULL},
     {NULL, 0, POPT_ARG_INCLUDE_TABLE, alg_ltl_options, 0, /*"LTL options"*/ NULL, NULL},
     {NULL, 0, POPT_ARG_INCLUDE_TABLE, ndfs_options, 0, /*"NDFS options"*/ NULL, NULL},
-    {NULL, 0, POPT_ARG_INCLUDE_TABLE, greybox_options_ltl, 0, "PINS options", NULL},
+    {NULL, 0, POPT_ARG_INCLUDE_TABLE, greybox_options, 0, "PINS options", NULL},
+    {NULL, 0 ,POPT_ARG_INCLUDE_TABLE, ltl_options, 0, "LTL options", NULL },
     POPT_TABLEEND
 };
 
@@ -234,6 +248,7 @@ struct poptOption options[] = {
      &arg_strategy, 0, "select the search strategy", "<bfs|sbfs|dfs|cndfs|lndfs|endfs|endfs,<strategy>|ndfs>"},
     {"proviso", 0, POPT_ARG_STRING|POPT_ARGFLAG_SHOW_DEFAULT, &arg_proviso , 0 ,
      "select proviso for LTL+POR or safety+POR", "<force-none|closed-set|stack|cndfs>"},
+    {"inhibit", 0, POPT_ARG_VAL, &inhibit, 1, "Obey the inhibit matrix if the model defines it.", NULL },
     {NULL, 0, POPT_ARG_INCLUDE_TABLE, alg_options_extra, 0, NULL, NULL},
     {NULL, 0, POPT_ARG_INCLUDE_TABLE, dfs_fifo_options, 0, "DFS FIFO options", NULL},
     {NULL, 0, POPT_ARG_INCLUDE_TABLE, owcty_options, 0, /*"OWCTY options"*/NULL, NULL},

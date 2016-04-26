@@ -9,6 +9,7 @@
 #include <stdlib.h>
 
 #include <hre/stringindex.h>
+#include <pins-lib/pins-util.h>
 #include <pins2lts-mc/algorithm/ltl.h>
 
 extern int              all_red;
@@ -67,7 +68,8 @@ extern void ndfs_global_deinit   (run_t *alg, wctx_t *ctx);
 
 extern void ndfs_print_stats   (run_t *alg, wctx_t *ctx);
 
-extern int  ndfs_state_seen (void *ptr, ref_t ref, int seen);
+extern int  ndfs_state_seen (void *ptr, transition_info_t *ti,
+                             ref_t ref, int seen);
 
 extern void ndfs_print_state_stats (run_t* run, wctx_t* ctx, int index,
                                     float waittime);
@@ -91,7 +93,7 @@ set_all_red (wctx_t *ctx, state_info_t *state)
 {
     if (state_store_try_color(state->ref, GRED, ctx->local->rec_bits)) {
         ctx->local->counters.allred++;
-        if ( GBbuchiIsAccepting(ctx->model, state_info_state(state)) )
+        if ( pins_state_is_accepting(ctx->model, state_info_state(state)) )
             ctx->local->counters.accepting++; /* count accepting states */
     } else {
         ctx->local->red.allred++;
@@ -103,7 +105,7 @@ set_red (wctx_t *ctx, state_info_t *state)
 {
     if (state_store_try_color(state->ref, GRED, ctx->local->rec_bits)) {
         ctx->local->red_work.explored++;
-        if ( GBbuchiIsAccepting(ctx->model, state_info_state(state)) )
+        if ( pins_state_is_accepting(ctx->model, state_info_state(state)) )
             ctx->local->counters.accepting++; /* count accepting states */
     } else {
         ctx->local->red.bogus_red++;

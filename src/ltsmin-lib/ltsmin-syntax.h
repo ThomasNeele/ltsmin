@@ -1,10 +1,8 @@
 #ifndef LTSMIN_SYNTAX_H
 #define LTSMIN_SYNTAX_H
 
-#include <hre/user.h>
 #include <hre-io/stream.h>
 #include <util-lib/fast_hash.h>
-#include <hre/stringindex.h>
 
 /**
 \brief Operator types.
@@ -39,16 +37,19 @@ extern int LTSminValueIndex(ltsmin_parse_env_t env,const char* name);
 
 extern int LTSminConstant (ltsmin_parse_env_t env, int token, const char* name);
 extern const char* LTSminConstantName (ltsmin_parse_env_t env, int idx);
+extern int LTSminConstantIdx(ltsmin_parse_env_t env, const char* name);
 extern int LTSminConstantToken(ltsmin_parse_env_t env, int idx);
 
 extern int LTSminPrefixOperator (ltsmin_parse_env_t env, int token, const char* name, int prio);
 extern int LTSminPostfixOperator(ltsmin_parse_env_t env, int token, const char* name, int prio);
 extern const char* LTSminUnaryName(ltsmin_parse_env_t env, int idx);
+extern int LTSminUnaryIdx(ltsmin_parse_env_t env, const char* name);
 extern int LTSminUnaryToken(ltsmin_parse_env_t env, int idx);
 extern int LTSminUnaryIsPrefix(ltsmin_parse_env_t env, int idx);
 
 extern int LTSminBinaryOperator(ltsmin_parse_env_t env,int token, const char* name,int prio);
 extern const char* LTSminBinaryName(ltsmin_parse_env_t env,int idx);
+extern int LTSminBinaryIdx(ltsmin_parse_env_t env, const char* name);
 extern int LTSminBinaryToken(ltsmin_parse_env_t env,int idx);
 
 extern void Parse(void*,int,int,ltsmin_parse_env_t);
@@ -66,7 +67,12 @@ typedef enum {
     VAR,
 
     /* predicate language constructs, to avoid enum collisions */
+    S_LT,
+    S_LEQ,
+    S_GT,
+    S_GEQ,
     S_EQ,
+    S_NEQ,
     S_TRUE,
     S_FALSE,
     S_NOT,
@@ -74,6 +80,11 @@ typedef enum {
     S_AND,
     S_EQUIV,
     S_IMPLY,
+    S_MULT,
+    S_DIV,
+    S_REM,
+    S_ADD,
+    S_SUB,
 
     /* special symbols */
     MU_FIX,
@@ -89,26 +100,35 @@ typedef enum {
     CONSTANT,
 } ltsmin_expr_case;
 
+typedef struct lts_annotation_s* lts_annotation_t;
+
 struct ltsmin_expr_s {
     ltsmin_expr_case    node_type;
     int                 idx;
     int                 token;
-    int                 num; // index in model chunk table
-    int                 lts_type; // lts type
     ltsmin_expr_t       arg1;
     ltsmin_expr_t       arg2;
     uint32_t            hash;
+    ltsmin_expr_t       parent;
+    lts_annotation_t    annotation;
+    void                (*copy_annotation)(const lts_annotation_t src, lts_annotation_t tgt);
+    lts_annotation_t    (*create_annotation)();
+    void                (*destroy_annotation)(lts_annotation_t a);
+    void*               context;
+    void                (*destroy_context)(void* c);
 };
 
 extern void   LTSminLogExpr(log_t log,char*msg,ltsmin_expr_t expr,ltsmin_parse_env_t env);
-extern size_t LTSminSPrintExpr(char *buf,ltsmin_expr_t expr,ltsmin_parse_env_t env);
+extern size_t LTSminSPrintExpr(char *buf, size_t max_buf,ltsmin_expr_t expr,ltsmin_parse_env_t env);
 extern char  *LTSminPrintExpr(ltsmin_expr_t expr,ltsmin_parse_env_t env);
 
 ltsmin_expr_t LTSminExpr(ltsmin_expr_case node_type, int token, int idx, ltsmin_expr_t arg1, ltsmin_expr_t arg2);
 int           LTSminExprEq(ltsmin_expr_t expr1, ltsmin_expr_t expr2);
 ltsmin_expr_t LTSminExprRehash(ltsmin_expr_t expr);
 ltsmin_expr_t LTSminExprClone(ltsmin_expr_t expr);
-void          LTSminExprDestroy(ltsmin_expr_t);
+void          LTSminExprDestroy(ltsmin_expr_t expr, int recurisve);
+
+extern ltsmin_expr_t LTSminExprSibling(ltsmin_expr_t e);
 
 /**
 \brief Print the given string as a legal ETF identifier.

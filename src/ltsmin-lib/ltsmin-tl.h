@@ -3,11 +3,17 @@
 
 /* Definitions for a simple predicate language & temporal logics */
 
+#include <dm/bitvector.h>
 #include <ltsmin-lib/lts-type.h>
 #include <ltsmin-lib/ltsmin-grammar.h>
 #include <ltsmin-lib/ltsmin-syntax.h>
 
-typedef ltsmin_expr_t (*parse_f)(const char *,ltsmin_parse_env_t,lts_type_t);
+struct lts_annotation_s {
+    bitvector_t         state_deps;
+    bitvector_t         state_label_deps;
+    matrix_t            edge_label_deps;
+    int                 chunk_type;
+};
 
 /* Predicate language */
 typedef enum {
@@ -16,14 +22,24 @@ typedef enum {
     PRED_NUM   = INT,
     PRED_CHUNK = CHUNK,
     PRED_VAR   = VAR,
+    PRED_LT    = S_LT,
+    PRED_LEQ   = S_LEQ,
+    PRED_GT    = S_GT,
+    PRED_GEQ   = S_GEQ,
     PRED_EQ    = S_EQ,
+    PRED_NEQ   = S_NEQ,
     PRED_TRUE  = S_TRUE,
     PRED_FALSE = S_FALSE,
     PRED_NOT   = S_NOT,
     PRED_OR    = S_OR,
     PRED_AND   = S_AND,
     PRED_EQUIV = S_EQUIV,
-    PRED_IMPLY = S_IMPLY
+    PRED_IMPLY = S_IMPLY,
+    PRED_MULT  = S_MULT,
+    PRED_DIV   = S_DIV,
+    PRED_REM   = S_REM,
+    PRED_ADD   = S_ADD,
+    PRED_SUB   = S_SUB
 } Pred;
 
 extern ltsmin_expr_t pred_parse_file(const char *,ltsmin_parse_env_t,lts_type_t);
@@ -37,12 +53,22 @@ typedef enum {
     LTL_VAR   = VAR,
     LTL_TRUE  = PRED_TRUE,
     LTL_FALSE = PRED_FALSE,
+    LTL_LT    = PRED_LT,
+    LTL_LEQ   = PRED_LEQ,
+    LTL_GT    = PRED_GT,
+    LTL_GEQ   = PRED_GEQ,
     LTL_NOT   = PRED_NOT,
     LTL_EQ    = PRED_EQ,
+    LTL_NEQ   = PRED_NEQ,
     LTL_OR    = PRED_OR,
     LTL_AND   = PRED_AND,
     LTL_EQUIV = PRED_EQUIV,
     LTL_IMPLY = PRED_IMPLY,
+    LTL_MULT  = PRED_MULT,
+    LTL_DIV   = PRED_DIV,
+    LTL_REM   = PRED_REM,
+    LTL_ADD   = PRED_ADD,
+    LTL_SUB   = PRED_SUB,
 
     LTL_FUTURE= TOKEN_USER,
     LTL_GLOBALLY,
@@ -65,12 +91,22 @@ typedef enum {
     CTL_VAR   = VAR,
     CTL_TRUE  = PRED_TRUE,
     CTL_FALSE = PRED_FALSE,
+    CTL_LT    = PRED_LT,
+    CTL_LEQ   = PRED_LEQ,
+    CTL_GT    = PRED_GT,
+    CTL_GEQ   = PRED_GEQ,
     CTL_NOT   = PRED_NOT,
     CTL_EQ    = PRED_EQ,
+    CTL_NEQ   = PRED_NEQ,
     CTL_OR    = PRED_OR,
     CTL_AND   = PRED_AND,
     CTL_EQUIV = PRED_EQUIV,
     CTL_IMPLY = PRED_IMPLY,
+    CTL_MULT  = PRED_MULT,
+    CTL_DIV   = PRED_DIV,
+    CTL_REM   = PRED_REM,
+    CTL_ADD   = PRED_ADD,
+    CTL_SUB   = PRED_SUB,
 
     CTL_NEXT  = TOKEN_USER,
     CTL_UNTIL,
@@ -90,12 +126,22 @@ typedef enum {
     MU_NUM                  = INT,
     MU_CHUNK                = CHUNK,
     MU_VAR                  = VAR,
+    MU_LT                   = PRED_LT,
+    MU_LEQ                  = PRED_LEQ,
+    MU_GT                   = PRED_GT,
+    MU_GEQ                  = PRED_GEQ,
     MU_AND                  = PRED_AND,
     MU_OR                   = PRED_OR,
     MU_EQ                   = PRED_EQ,
+    MU_NEQ                  = PRED_NEQ,
     MU_TRUE                 = PRED_TRUE,
     MU_FALSE                = PRED_FALSE,
     MU_NOT                  = PRED_NOT,
+    MU_MULT                = PRED_MULT,
+    MU_DIV                 = PRED_DIV,
+    MU_REM                 = PRED_REM,
+    MU_ADD                 = PRED_ADD,
+    MU_SUB                 = PRED_SUB,
 
     MU_EDGE_EXIST           = EDGE_EXIST,
     MU_EDGE_ALL             = EDGE_ALL,
@@ -124,7 +170,6 @@ extern ltsmin_expr_t ctl_to_ctl_star(ltsmin_expr_t);
 extern ltsmin_expr_t ctl_normalize(ltsmin_expr_t);
 extern ltsmin_expr_t ctl_star_to_pnf(ltsmin_expr_t);
 extern ltsmin_expr_t ctl_star_to_mu(ltsmin_expr_t);
-extern char* ltsmin_expr_print_ltl(ltsmin_expr_t, char*);
 extern char* ltsmin_expr_print_ctl(ltsmin_expr_t, char*);
 extern char* ltsmin_expr_print_mu(ltsmin_expr_t, char*);
 

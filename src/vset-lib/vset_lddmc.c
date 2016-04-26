@@ -2,13 +2,18 @@
 
 #include <assert.h>
 #include <inttypes.h>
+#include <limits.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <math.h>
 
 #include <hre/user.h>
 #include <vset-lib/vdom_object.h>
+#include <vset-lib/vector_set.h>
+#include <mc-lib/atomics.h>
+#include <util-lib/fast_hash.h>
 
-
+#include <cache.h>
 #include <sylvan.h>
 
 static int datasize = 22; // 23 = 128 MB
@@ -264,23 +269,32 @@ set_member(vset_t set, const int* e)
 }
 
 static void
-set_count(vset_t set, long *nodes, bn_int_t *elements)
+set_count(vset_t set, long *nodes, double *elements)
 {
     entermt(set);
     LACE_ME;
     if (nodes != NULL) *nodes = lddmc_nodecount(set->mdd);
-    if (elements != NULL) bn_double2int(lddmc_satcount_cached(set->mdd), elements);
+    if (elements != NULL) *elements = lddmc_satcount_cached(set->mdd);
     leavemt(set);
 }
 
 static void
-rel_count(vrel_t rel, long *nodes, bn_int_t *elements)
+set_ccount(vset_t set, long *nodes, long double *elements)
+{
+    entermt(set);
+    LACE_ME;
+    if (nodes != NULL) *nodes = lddmc_nodecount(set->mdd);
+    if (elements != NULL) *elements = lddmc_satcount(set->mdd);
+    leavemt(set);
+}
+
+static void
+rel_count(vrel_t rel, long *nodes, double *elements)
 {
     entermt(rel);
     LACE_ME;
-    *nodes = lddmc_nodecount(rel->mdd);
-    double count = lddmc_satcount(rel->mdd);
-    bn_double2int(count, elements);
+    if (nodes != NULL) *nodes = lddmc_nodecount(rel->mdd);
+    if (elements != NULL) *elements = lddmc_satcount(rel->mdd);
     leavemt(rel);
 }
 
@@ -539,6 +553,23 @@ set_next(vset_t dst, vset_t src, vrel_t rel)
 }
 
 static void
+set_next_union(vset_t dst, vset_t src, vrel_t rel, vset_t uni)
+{
+    entermt(dst);
+    LACE_ME;
+    assert(dst->size == src->size && uni->size == dst->size);
+    if (dst == src) {
+        MDD old = dst->mdd;
+        dst->mdd = lddmc_ref(lddmc_relprod_union(src->mdd, rel->mdd, rel->meta, uni->mdd));
+        lddmc_deref(old);
+    } else {
+        lddmc_deref(dst->mdd);
+        dst->mdd = lddmc_ref(lddmc_relprod_union(src->mdd, rel->mdd, rel->meta, uni->mdd));
+    }
+    leavemt(dst);
+}
+
+static void
 set_prev(vset_t dst, vset_t src, vrel_t rel, vset_t universe)
 {
     entermt(dst);
@@ -693,10 +724,136 @@ separates_rw()
     return 1;
 }
 
-static int
-supports_cpy()
+typedef struct lddmc_visit_info_global {
+    uint64_t op;
+    vset_visit_callbacks_t* cbs;
+    size_t user_ctx_size;
+} lddmc_visit_info_global_t;
+
+typedef struct lddmc_visit_info {
+    MDD proj;
+    void* user_context;
+    lddmc_visit_info_global_t* global;
+} lddmc_visit_info_t;
+
+TASK_2(int, lddmc_visit_pre, MDD, mdd, void*, context)
 {
+    lddmc_visit_info_t* ctx = (lddmc_visit_info_t*) context;
+
+    if (ctx->global->cbs->vset_visit_pre == NULL) return 1;
+
+    if (mdd == lddmc_false) {
+        ctx->global->cbs->vset_visit_pre(1, 0, 0, NULL, ctx->user_context);
+        return 0;
+    }
+    if (mdd == lddmc_true) {
+        ctx->global->cbs->vset_visit_pre(1, 1, 0, NULL, ctx->user_context);
+        return 0;
+    }
+
+    void* result = NULL;
+    if (cache_get(mdd | ctx->global->op, ctx->proj, 0, (uint64_t*) &result)) {
+        ctx->global->cbs->vset_visit_pre(0, lddmc_getvalue(mdd), 1, result, ctx->user_context);
+        return 0;
+    }
+
+    ctx->global->cbs->vset_visit_pre(0, lddmc_getvalue(mdd), 0, NULL, ctx->user_context);
+
     return 1;
+}
+
+VOID_TASK_3(lddmc_visit_init_context, void*, context, void*, parent, int, succ)
+{
+    lddmc_visit_info_t* ctx = (lddmc_visit_info_t*) context;
+
+    lddmc_visit_info_t* p = (lddmc_visit_info_t*) parent;
+
+    ctx->global = p->global;
+    if (succ == 1) ctx->proj = lddmc_getdown(p->proj);
+    else ctx->proj = p->proj;
+    ctx->user_context = (&ctx->global) + 1;
+
+    if (ctx->global->cbs->vset_visit_init_context != NULL) {
+        ctx->global->cbs->vset_visit_init_context(ctx->user_context, p->user_context, succ);
+    }
+}
+
+VOID_TASK_2(lddmc_visit_post, MDD, mdd, void*, context)
+{
+    lddmc_visit_info_t* ctx = (lddmc_visit_info_t*) context;
+
+    if (ctx->global->cbs->vset_visit_post == NULL) return;
+
+    int cache = 0;
+    void* result = NULL;
+    ctx->global->cbs->vset_visit_post(lddmc_getvalue(mdd), ctx->user_context, &cache, &result);
+
+    if (cache) {
+        if (cache_put(mdd | ctx->global->op, ctx->proj, 0, (uint64_t) result)) {
+            if (ctx->global->cbs->vset_visit_cache_success != NULL) {
+                ctx->global->cbs->vset_visit_cache_success(ctx->user_context, result);
+            }
+        }
+    }
+}
+
+static void
+set_visit_prepare(vset_t set, vset_visit_callbacks_t* cbs, size_t user_ctx_size, void* user_ctx,
+    int cache_op, lddmc_visit_info_t* context, lddmc_visit_callbacks_t* lddmc_cbs)
+{
+    context->global->op = ((uint64_t) cache_op) << 40;
+    context->global->cbs = cbs;
+    context->global->user_ctx_size = user_ctx_size;
+
+    context->proj = set->proj;
+    context->user_context = user_ctx;
+
+    lddmc_cbs->lddmc_visit_pre = TASK(lddmc_visit_pre);
+    lddmc_cbs->lddmc_visit_init_context = TASK(lddmc_visit_init_context);
+    lddmc_cbs->lddmc_visit_post = TASK(lddmc_visit_post);
+}
+
+static void
+set_visit_par(vset_t set, vset_visit_callbacks_t* cbs, size_t user_ctx_size, void* user_ctx, int cache_op)
+{
+    lddmc_visit_info_t context;
+    lddmc_visit_info_global_t glob;
+    context.global = &glob;
+    lddmc_visit_callbacks_t lddmc_cbs;
+    set_visit_prepare(set, cbs, user_ctx_size, user_ctx, cache_op, &context, &lddmc_cbs);
+
+    LACE_ME;
+    lddmc_visit_par(set->mdd, &lddmc_cbs, sizeof(lddmc_visit_info_t) + user_ctx_size, &context);
+}
+
+static void
+set_visit_seq(vset_t set, vset_visit_callbacks_t* cbs, size_t user_ctx_size, void* user_ctx, int cache_op)
+{
+    lddmc_visit_info_t context;
+    lddmc_visit_info_global_t glob;
+    context.global = &glob;
+    lddmc_visit_callbacks_t lddmc_cbs;
+    set_visit_prepare(set, cbs, user_ctx_size, user_ctx, cache_op, &context, &lddmc_cbs);
+
+    LACE_ME;
+    lddmc_visit_seq(set->mdd, &lddmc_cbs, sizeof(lddmc_visit_info_t) + user_ctx_size, &context);
+}
+
+static void
+dom_clear_cache(vdom_t dom, const int cache_op)
+{
+    (void) cache_op; (void) dom;
+    cache_clear();
+}
+
+static int
+dom_next_cache_op(vdom_t dom)
+{
+    (void) dom;
+    const uint64_t op = cache_next_opid();
+    if (op >> 40 > INT_MAX) Abort("Too many user cache operations");
+
+    return (int) op;
 }
 
 static void
@@ -710,6 +867,7 @@ set_function_pointers(vdom_t dom)
     dom->shared.set_clear=set_clear;
     dom->shared.set_copy=set_copy;
     dom->shared.set_count=set_count;
+    dom->shared.set_ccount=set_ccount;
     dom->shared.set_project=set_project;
     dom->shared.set_project_minus=set_project_minus;
     dom->shared.set_union=set_union;
@@ -734,8 +892,13 @@ set_function_pointers(vdom_t dom)
     dom->shared.set_copy_match=set_copy_match;
 
     dom->shared.set_next=set_next;
+    dom->shared.set_next_union=set_next_union;
     dom->shared.set_prev=set_prev;
     dom->shared.set_join=set_join;
+    dom->shared.set_visit_par=set_visit_par;
+    dom->shared.set_visit_seq=set_visit_seq;
+    dom->shared.dom_clear_cache=dom_clear_cache;
+    dom->shared.dom_next_cache_op=dom_next_cache_op;
     //dom->shared.set_least_fixpoint=set_least_fixpoint;
 	//void (*set_least_fixpoint)(vset_t dst,vset_t src,vrel_t rels[],int rel_count);
 
@@ -763,7 +926,6 @@ set_function_pointers(vdom_t dom)
     dom->shared.rel_load=rel_load;
 
     dom->shared.separates_rw=separates_rw;
-    dom->shared.supports_cpy=supports_cpy;
 }
 
 vdom_t

@@ -11,13 +11,16 @@
 #ifndef LTSMIN_STANDARD_H_
 #define LTSMIN_STANDARD_H_
 
+#include <hre/feedback.h>
+
+
 /**
  * Exit codes
  */
 
 #define LTSMIN_EXIT_COUNTER_EXAMPLE     1
-#define LTSMIN_EXIT_SUCCESS             0
-#define LTSMIN_EXIT_FAILURE             255
+#define LTSMIN_EXIT_SUCCESS             HRE_EXIT_SUCCESS
+#define LTSMIN_EXIT_FAILURE             HRE_EXIT_FAILURE
 #define LTSMIN_EXIT_UNSOUND             2
 
 /**
@@ -27,12 +30,19 @@
 #define LTSMIN_MATRIX_ACTIONS_READS     "dm_actions_reads"
 #define LTSMIN_MUST_DISABLE_MATRIX      "dm_must_disable"
 #define LTSMIN_MUST_ENABLE_MATRIX       "dm_must_enable"
+#define LTSMIN_NOT_LEFT_ACCORDS         "dm_not_left_accords"
+/* weaker version of NEVER-coenabledness: guard/group instead of guard/guard */
+/* note that we also take the inverse of coenabledness: never-coenabledness */
+/* TODO: make GBsetGuardCoEnabledInfo obsolete */
+#define LTSMIN_GUARD_GROUP_NOT_COEN     "dm_guard_group_not_coen"
 
 /**
  * Types
  */
 
 #define LTSMIN_TYPE_BOOL                "bool"
+#define LTSMIN_TYPE_GUARD               "guard"
+#define LTSMIN_TYPE_NUMERIC             "numeric"
 
 
 /**
@@ -44,6 +54,9 @@
 #define LTSMIN_VALUE_ACTION_PROGRESS    "progress"  // progress actions
 /* A value that contains "<progress>" is counted as a progress transition */
 #define LTSMIN_VALUE_STATEMENT_PROGRESS "<progress>"
+#define LTSMIN_VALUE_GUARD_FALSE        LTSMIN_VALUE_BOOL_FALSE // GBchunkPutAt(.., 0)
+#define LTSMIN_VALUE_GUARD_TRUE         LTSMIN_VALUE_BOOL_TRUE  // GBchunkPutAt(.., 1)
+#define LTSMIN_VALUE_GUARD_MAYBE        "maybe"
 
 
 /**
@@ -69,6 +82,10 @@
  **/
 #define LTSMIN_EDGE_TYPE_STATEMENT      "statement"
 
+/** SPOT's TGBA uses accepting sets on edges **/
+#define LTSMIN_EDGE_TYPE_ACCEPTING_SET  "acc_set"
+#define LTSMIN_EDGE_LABEL_ACCEPTING_SET "acc_set"
+
 /**
 @brief The name and type of the hyper edge group.
 
@@ -85,6 +102,18 @@ are part of a single hyper edge.
 
 /* Guard prefixes */
 #define LTSMIN_LABEL_TYPE_GUARD_PREFIX  "guard"
+
+/* Buchi accepting states for (automata-baseD) LTL checking */
+#define LTSMIN_STATE_LABEL_ACCEPTING    "buchi_accept"
+
+/* progress states for livelock detection */
+#define LTSMIN_STATE_LABEL_PROGRESS     "progress_state"
+
+/* progress states for weak LTL as livelock detection (non-accepting is progress) */
+#define LTSMIN_STATE_LABEL_WEAK_LTL_PROGRESS     "weak_ltl_progress"
+
+/* SPIN's valid end states, for distinguishing between harmless and erroneous deadlocks */
+#define LTSMIN_STATE_LABEL_VALID_END    "valid_end_state"
 
 
 #endif /* LTSMIN_STANDARD_H_ */

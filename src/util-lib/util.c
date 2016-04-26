@@ -1,10 +1,12 @@
 #include <hre/config.h>
 
 #include <ctype.h>
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include <hre/user.h>
+#include <hre/unix.h>
 #include <util-lib/util.h>
 
 char *
@@ -72,4 +74,58 @@ void
 ci_free (ci_list *list)
 {
     RTfree (list);
+}
+
+static inline void
+ci_print_int (log_t log, ci_list *list)
+{
+    if (list->count > 0)
+        Printf (log, "%d", ci_get(list, 0));
+    for (int g = 1; g < list->count; g++) {
+        Printf (log, ", %d", ci_get(list, g));
+    }
+}
+
+void
+ci_debug (ci_list *list)
+{
+    if (debug == NULL) return;
+    ci_print_int (debug, list);
+}
+
+void
+ci_print (ci_list *list)
+{
+    ci_print_int (info, list);
+}
+
+static int
+compint (const void *a, const void *b, void *ctx)
+{
+    return *(int *)a - *(int *)b;
+    (void) ctx;
+}
+
+void
+ci_sort (ci_list *list)
+{
+    qsortr (list->data, list->count, sizeof(int), compint, NULL);
+}
+
+int long_mult_overflow(const long si_a, const long si_b) {
+    if (si_a > 0) { /* si_a is positive */
+        if (si_b > 0) { /* si_a and si_b are positive */
+            if (si_a > (LONG_MAX / si_b)) return 1;
+        } else { /* si_a positive, si_b nonpositive */
+            if (si_b < (LONG_MIN / si_a)) return 1;
+        } /* si_a positive, si_b nonpositive */
+    } else { /* si_a is nonpositive */
+        if (si_b > 0) { /* si_a is nonpositive, si_b is positive */
+            if (si_a < (LONG_MIN / si_b)) return 1;
+        } else { /* si_a and si_b are nonpositive */
+            if ((si_a != 0) && (si_b < (LONG_MAX / si_a))) return 1;
+        } /* End if si_a and si_b are nonpositive */
+    } /* End if si_a is nonpositive */
+    
+    return 0;
 }

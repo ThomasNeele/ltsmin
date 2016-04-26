@@ -11,13 +11,69 @@
 #include <hre-io/user.h>
 #include <mc-lib/atomics.h>
 #include <pins-lib/pins.h>
+#include <pins-lib/pins-util.h>
+#include <pins-lib/pins2pins-ltl.h>
 #include <pins-lib/pins2pins-mucalc.h>
+#include <pins-lib/por/pins2pins-por.h>
 #include <ltsmin-lib/mucalc-grammar.h>
 #include <ltsmin-lib/mucalc-parse-env.h>
 #include <ltsmin-lib/mucalc-syntax.h>
 #include <ltsmin-lib/mucalc-lexer.h>
 #include <pins-lib/pg-types.h>
 
+static char *mucalc_file = NULL;
+
+static int mucalc_node_count = 0;
+
+struct poptOption mucalc_options[]={
+    { "mucalc", 0, POPT_ARG_STRING, &mucalc_file, 0, "modal mu-calculus formula or file with modal mu-calculus formula",
+          "<mucalc-file>.mcf|<mucalc formula>"},
+    POPT_TABLEEND
+};
+
+int GBhaveMucalc() {
+    return (mucalc_file) ? 1 : 0;
+}
+
+int GBgetMucalcNodeCount() {
+    return mucalc_node_count;
+}
+
+
+typedef struct mucalc_node {
+    mucalc_expr_t       expression;
+    pg_player_enum_t    player;
+    int                 priority;
+} mucalc_node_t;
+
+
+typedef struct mucalc_group_entry {
+    mucalc_node_t       node;
+    int                 parent_group;
+} mucalc_group_entry_t;
+
+
+typedef struct mucalc_groupinfo {
+    int                     group_count;
+    mucalc_group_entry_t   *entries;
+    int                     node_count;
+    mucalc_node_t          *nodes;
+    int                     variable_count;
+    int                    *fixpoint_nodes; // mapping from variable index to node number
+    int                     initial_node;
+} mucalc_groupinfo_t;
+
+
+typedef struct mucalc_context {
+    model_t         parent;
+    int             action_label_index;
+    int             action_label_type_no;
+    mucalc_parse_env_t env;
+    int             mu_idx;
+    int             len;
+    int             groups;
+    mucalc_groupinfo_t groupinfo;
+} mucalc_context_t;
 
 typedef struct cb_context {
     model_t         model;
@@ -115,7 +171,7 @@ void mucalc_print_state(log_t log, mucalc_context_t* ctx, int* state)
                 break;
                 default:
                 {
-                    chunk c = GBchunkGet(ctx->parent, type_no, GBchunkPrettyPrint(ctx->parent, i, state[i]));
+                    chunk c = pins_chunk_get (ctx->parent, type_no, GBchunkPrettyPrint(ctx->parent, i, state[i]));
                     char value[c.len*2+6];
                     chunk2string(c, sizeof value, value);
                     Printf(log, "%s=%s", name, value);
@@ -156,7 +212,7 @@ void mucalc_cb (void* context, transition_info_t* ti, int* dst, int* cpy) {
     else if (node.expression->value!=-1 && ctx->action_label_index!=-1)
     {
         int* edge_labels = ti->labels;
-        chunk c = GBchunkGet(parent, ctx->action_label_type_no, edge_labels[ctx->action_label_index]);
+        chunk c = pins_chunk_get (parent, ctx->action_label_type_no, edge_labels[ctx->action_label_index]);
         char label[c.len*2+6];
         chunk2string(c, sizeof label, label);
         assert(strlen(label) >= 2);
@@ -830,7 +886,7 @@ void mucalc_add_proposition_values(model_t model)
                     char decode[len];
                     chunk data={.data=decode,.len=len};
                     string2chunk(value, &data);
-                    env->propositions[p].value_idx = GBchunkPut(model, env->propositions[p].state_typeno, data);
+                    env->propositions[p].value_idx = pins_chunk_put (model, env->propositions[p].state_typeno, data);
                     Print(infoLong, "State part %d matches the proposition id %s. Value stored at index %d.", i, id, env->propositions[p].value_idx);
                 }
                 else
@@ -886,8 +942,14 @@ static matrix_t sl_info;
  * \brief Initialises the mu-calculus PINS layer.
  */
 model_t
-GBaddMucalc (model_t model, const char *mucalc_file)
+GBaddMucalc (model_t model)
 {
+    /* add mu calculus */
+    if (!mucalc_file) return model;
+
+    if (PINS_LTL) Abort("The --mucalc option and --ltl options can not be combined.");
+    if (PINS_POR) Abort("The --mucalc option and --por options can not be combined.");
+
     Warning(info,"Initializing mu-calculus layer... formula: %s", mucalc_file);
     model_t _model = GBcreateBase();
     mucalc_context_t *ctx = RTmalloc(sizeof *ctx);
@@ -952,7 +1014,7 @@ GBaddMucalc (model_t model, const char *mucalc_file)
 
     // Compute transition groups
     ctx->groupinfo = mucalc_compute_groupinfo(env, parent_groups);
-    GBsetMucalcNodeCount(_model, ctx->groupinfo.node_count);
+    mucalc_node_count = ctx->groupinfo.node_count;
 
     mucalc_add_proposition_values(_model);
     mucalc_add_action_labels(_model);
@@ -1003,10 +1065,8 @@ GBaddMucalc (model_t model, const char *mucalc_file)
 
     GBsetDMInfo(_model, _p_dm);
     GBsetDMInfoRead(_model, _p_dm_r);
-    GBsetExpandMatrix(_model, _p_dm_r);
     GBsetDMInfoMayWrite(_model, _p_dm_mw);
     GBsetDMInfoMustWrite(_model, _p_dm_w);
-    GBsetProjectMatrix(_model, _p_dm_mw);
 
     // Set the state label functions for parity games
     GBsetStateLabelShort(_model, mucalc_sl_short);

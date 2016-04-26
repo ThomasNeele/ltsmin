@@ -14,7 +14,7 @@ puts   "TESTING: Algorithmic backends for Mcrl2"
 puts   "-----------------------------\n"
 
 # the number of threads to use in multithreaded backends
-set num_threads 5
+set num_threads 2
 
 set langs [dict create]
 
@@ -23,10 +23,10 @@ set langs [dict create]
 
 # lps:
 dict set langs lps model "ieee-11073.lps"
-dict set langs lps options mc "--procs=$num_threads --mcrl2=-rjitty"
-dict set langs lps options dist "--mcrl2=-rjitty"
-dict set langs lps options seq "--mcrl2=-rjitty"
-dict set langs lps options sym "--mcrl2=-rjitty"
+dict set langs lps options mc "--procs=$num_threads --mcrl2-rewriter=jitty"
+dict set langs lps options dist "--mcrl2-rewriter=jitty"
+dict set langs lps options seq "--mcrl2-rewriter=jitty"
+dict set langs lps options sym "--mcrl2-rewriter=jitty"
 
 dict set langs lps exp_output "831 states 2893 transitions"
 set alg_be [ find_alg_backends "{dist,mc,seq}" ]
@@ -34,6 +34,8 @@ run_test_for_alg_backends $alg_be $langs $backends
 
 # different output for symbolic tool:
 dict set langs lps exp_output "state space has 831"
+# below, disable the -g option, this fails in 201409.1, but fixed in newer SVN version.
+dict set backends sym options {"-rga" ""}
 set alg_be [ find_alg_backends "{sym}" ]
 run_test_for_alg_backends $alg_be $langs $backends
 

@@ -4,6 +4,8 @@
 
 #include <dm/bitvector.h>
 
+#include "hre/user.h"
+
 static inline       size_t
 utrunc (size_t x, size_t m)
 {
@@ -20,18 +22,12 @@ bv_seg (size_t i) { return i >> WORD_SHIFT; }
 static inline size_t
 bv_ofs (size_t i) { return i & WORD_BITS_MASK; }
 
-int
+void
 bitvector_create (bitvector_t *bv, size_t n_bits)
 {
     bv->n_words = utrunc (n_bits, WORD_BITS);
-    bv->data = calloc (bv->n_words, sizeof (size_t));
-    if (bv->data == NULL) {
-        bv->n_bits = 0;
-        return -1;
-    } else {
-        bv->n_bits = n_bits;
-        return 0;
-    }
+    bv->data = RTmallocZero (bv->n_words * sizeof (size_t));
+    bv->n_bits = n_bits;
 }
 
 void
@@ -45,27 +41,23 @@ bitvector_free (bitvector_t *bv)
 {
     // free memory
     if (bv->data != NULL)
-        free (bv->data);
+        RTfree (bv->data);
     bv->n_bits = 0;
 }
 
-int
+void
 bitvector_copy (bitvector_t *bv_tgt, const bitvector_t *bv_src)
 {
     // check validity src
-    if (bv_src->data == NULL)
-        return -1;
+    HREassert(bv_src->data != NULL);
 
     // alloc memory for target
-    if (bitvector_create (bv_tgt, bv_src->n_bits) != 0) {
-        return -1;
-    } else {
-        // copy bitvector
-        size_t              size =
-            utrunc (bv_src->n_bits, WORD_BITS) * sizeof (size_t);
-        memcpy (bv_tgt->data, bv_src->data, size);
-        return 0;
-    }
+    bitvector_create (bv_tgt, bv_src->n_bits);
+    
+    // copy bitvector
+    size_t              size =
+        utrunc (bv_src->n_bits, WORD_BITS) * sizeof (size_t);
+    memcpy (bv_tgt->data, bv_src->data, size);    
 }
 
 size_t
@@ -165,7 +157,7 @@ bitvector_intersect(bitvector_t *bv, const bitvector_t *bv2)
     // check size
     if (bv->n_bits != bv2->n_bits) return;
 
-    // calculate number of words in the bitvector, union wordwise
+    // calculate number of words in the bitvector, intersect wordwise
     for(size_t i=0; i < bv->n_words; ++i) {
         bv->data[i] &= bv2->data[i];
     }
@@ -216,3 +208,50 @@ bitvector_invert(bitvector_t *bv)
     if (used_bits < WORD_BITS)
         bv->data[bv->n_words-1] &= mask;
 }
+
+size_t
+bitvector_n_high(bitvector_t *bv)
+{
+    HREassert(sizeof(size_t) == sizeof(unsigned long long));
+    
+    size_t n_high = 0;
+    
+    for (size_t i = 0; i < bv->n_words; i++) {
+        n_high += __builtin_popcountll((unsigned long long) bv->data[i]);
+    }
+    
+    return n_high;
+}
+
+void
+bitvector_high_bits(bitvector_t *bv, int *bits)
+{
+    if (bv->n_bits > INT_MAX) Abort("bitvector too large");
+    
+    for (int i = 0, j = 0; i < (int) bv->n_bits; i++) {
+        if (bitvector_is_set(bv, i)) bits[j++] = i;
+    }
+}
+
+int
+bitvector_equal(const bitvector_t *bv1, const bitvector_t *bv2)
+{
+    if (bv1->n_bits != bv2->n_bits) return 0;
+    
+    for(size_t i=0; i < bv1->n_words; ++i) {
+        if (bv1->data[i] != bv2->data[i]) return 0;
+    }
+    return 1;
+}
+
+void
+bitvector_xor(bitvector_t *bv, const bitvector_t *bv2)
+{
+    if (bv->n_bits != bv2->n_bits) return;
+
+    // calculate number of words in the bitvector, xor wordwise
+    for(size_t i=0; i < bv->n_words; ++i) {
+        bv->data[i] ^= bv2->data[i];
+    }
+}
+

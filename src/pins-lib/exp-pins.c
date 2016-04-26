@@ -2,6 +2,7 @@
 #include <hre/stringindex.h>
 #include <hre/user.h>
 #include <pins-lib/exp-pins.h>
+#include <pins-lib/por/pins2pins-por.h>
 
 
 static void exp_popt(poptContext con,
@@ -284,16 +285,22 @@ int exp_next_long(model_t self, int group, int *src, TransitionCB cb, void *user
         int process_counter = 0;
         int process_index[model->num_processes];
         int process_num_transitions[model->num_processes];
-        int* target_states[model->num_processes];
+        int max_succ = 0;
+        for(int i = 0; i < model->num_processes; i++) {
+            if (model->sync_rules[rule_number][i] != NULL &&
+                model->processes[i].transitions[src[i]] != NULL &&
+                max_succ < model->processes[i].transitions[src[i]]->num) {
+                max_succ = model->processes[i].transitions[src[i]]->num;
+            }
+        }
+        int target_states[model->num_processes][max_succ];
         for(int i = 0; i < model->num_processes; i++) {
             if(model->sync_rules[rule_number][i] != NULL) {
                 if(model->processes[i].transitions[src[i]] == NULL) {
                     // This state is a deadlock
                     is_applicable = 0;
-                    process_counter--;
                     break;
                 }
-                target_states[process_counter] = RTmalloc(sizeof(int) * model->processes[i].transitions[src[i]]->num);
                 int num_enabled = 0;
                 exp_trans_t trans = model->processes[i].transitions[src[i]];
                 for (int j = 0; j < trans->num; j++) {
@@ -318,9 +325,6 @@ int exp_next_long(model_t self, int group, int *src, TransitionCB cb, void *user
             }
         }
         if(is_applicable == 0) {
-            for(int i = 0; i <= process_counter && i < model->num_processes; i++) {
-                RTfree(target_states[i]);
-            }
             return 0;
         }
 
@@ -362,9 +366,6 @@ int exp_next_long(model_t self, int group, int *src, TransitionCB cb, void *user
                 i++;
             } while (trans_counter[i-1] == 0);
         }
-        for(int i = 0; i < process_counter && i < model->num_processes; i++) {
-            RTfree(target_states[i]);
-        }
     }
     return num_transitions;
 }
@@ -385,13 +386,22 @@ int exp_label_long(model_t self, int label, int* src) {
         for(int i = 0; trans != NULL && i < trans->num; i++) {
             char *trans_label = trans->label[i];
             while (trans_label) {
-                char* gate = exp_get_gate(trans_label);
-                if (SIlookup(context->sync_gates[label], gate) == SI_INDEX_FAILED) {
+                char* offer_begin = strpbrk(trans_label,"!? (\t\x1f");
+                char tmp;
+                if(offer_begin != NULL) {
+                    tmp = offer_begin[0];
+                    offer_begin[0] = '\0';
+                }
+                if (SIlookup(context->sync_gates[label], trans_label) == SI_INDEX_FAILED) {
                     // Found a local action
-                    RTfree(gate);
+                    if(offer_begin != NULL) {
+                        offer_begin[0] = tmp;
+                    }
                     return 1;
                 }
-                RTfree(gate);
+                if(offer_begin != NULL) {
+                    offer_begin[0] = tmp;
+                }
                 exp_next_label(&trans_label);
             }
         }

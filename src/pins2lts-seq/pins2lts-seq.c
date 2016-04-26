@@ -17,7 +17,9 @@
 #include <pins-lib/pins.h>
 #include <pins-lib/pins-impl.h>
 #include <pins-lib/pins-util.h>
+#include <pins-lib/pins2pins-ltl.h>
 #include <pins-lib/property-semantics.h>
+#include <pins-lib/por/pins2pins-por.h>
 #include <mc-lib/dbs-ll.h>
 #include <mc-lib/trace.h>
 #include <util-lib/bitset.h>
@@ -189,7 +191,8 @@ static struct poptOption options[] = {
       "select proviso for ltl/por", "<closedset|stack|color>"},
     { "max" , 0 , POPT_ARG_LONGLONG|POPT_ARGFLAG_SHOW_DEFAULT , &opt.max , 0 ,"maximum search depth", "<int>"},
     SPEC_POPT_OPTIONS,
-    { NULL, 0 , POPT_ARG_INCLUDE_TABLE, greybox_options_ltl , 0 , "PINS options", NULL },
+    { NULL, 0 , POPT_ARG_INCLUDE_TABLE, greybox_options , 0 , "PINS options", NULL },
+    { NULL, 0 , POPT_ARG_INCLUDE_TABLE, ltl_options , 0 , "LTL options", NULL },
     { NULL, 0 , POPT_ARG_INCLUDE_TABLE, vset_options , 0 , "Vector set options", NULL },
     { NULL, 0 , POPT_ARG_INCLUDE_TABLE, development_options , 0 , "Development options" , NULL },
     POPT_TABLEEND
@@ -221,13 +224,6 @@ static struct {
     .violations     = 0,
     .errors         = 0,
 };
-
-
-static void *
-new_string_index (void *context)
-{
-    return chunk_table_create (context, "GSEA table");
-}
 
 typedef struct gsea_state {
     int* state;
@@ -1073,7 +1069,7 @@ scc_open_extract(gsea_state_t *state, void *arg)
     //if (accepting state) // there is precisely one accept set (NO GBA support)
     // fiddle accepting/not accepting in as single a bit
     int r = state->tree.tree_idx << 1;
-    if (GBbuchiIsAccepting(opt.model, state->state)) {
+    if (pins_state_is_accepting(opt.model, state->state)) {
         r |= 1;
     }
 
@@ -1255,7 +1251,7 @@ gsea_dlk_wrapper(gsea_state_t *state, void *arg)
 
     if (state->count != 0) return; // no deadlock
     global.deadlocks++;
-    if (GBstateIsValidEnd(opt.model, state->state)) return; // valid end state
+    if (pins_state_is_valid_end(opt.model, state->state)) return; // valid end state
     if ( !opt.inv_expr ) global.violations++;
     do_trace(NULL, arg, "deadlock", ""); // state still on stack
 }
@@ -1263,7 +1259,7 @@ gsea_dlk_wrapper(gsea_state_t *state, void *arg)
 static void
 gsea_invariant_check(gsea_state_t *state, void *arg)
 {
-    if ( eval_predicate(opt.model, opt.inv_expr, NULL, state->state, global.N, opt.env) ) return; // invariant holds
+    if ( eval_predicate(opt.model, opt.inv_expr, state->state, opt.env) ) return; // invariant holds
 
     global.violations++;
     do_trace(NULL, arg, "Invariant violation", opt.inv_detect); // state still on stack
@@ -1387,7 +1383,7 @@ gsea_setup_default()
         break;
     case Strategy_SCC:
         // exception for Strat_SCC, only works in combination with ltl formula
-        if (GBgetAcceptingStateLabelIndex(opt.model) < 0) {
+        if (pins_get_accepting_state_label_index(opt.model) < 0) {
             Abort("SCC search only works in combination with an accepting state label"
                   " (see LTL options)");
         }
@@ -1493,7 +1489,7 @@ static void
 set_strategy (const char *output)
 {
     if (opt.strategy == Strategy_None) {
-        if (GBgetAcceptingStateLabelIndex(opt.model) >= 0) {
+        if (pins_get_accepting_state_label_index(opt.model) >= 0) {
             opt.strategy = Strategy_SCC;
         } else if (output) {
             opt.strategy = Strategy_BFS;
@@ -1515,18 +1511,18 @@ gsea_setup(const char *output)
             Abort("No edge label '%s...' for action detection", LTSMIN_EDGE_TYPE_ACTION_PREFIX);
         int typeno = lts_type_get_edge_label_typeno(ltstype, opt.act_label);
         chunk c = chunk_str(opt.act_detect);
-        opt.act_index = GBchunkPut(opt.model, typeno, c);
+        opt.act_index = pins_chunk_put (opt.model, typeno, c);
         Warning(info, "Detecting action \"%s\"", opt.act_detect);
         if (PINS_POR) {
-            pins_add_edge_label_visible (opt.model, opt.act_label, opt.act_index);
+            pins_add_edge_label_visible(opt.model, opt.act_label, opt.act_index);
             set_cycle_proviso ();
         }
     }
     if (opt.inv_detect) {
         opt.env = LTSminParseEnvCreate();
-        opt.inv_expr = parse_file_env (opt.inv_detect, pred_parse_file, opt.model, opt.env);
+        opt.inv_expr = pred_parse_file (opt.inv_detect, opt.env, GBgetLTStype(opt.model));
         if (PINS_POR) {
-            mark_visible (opt.model, opt.inv_expr, opt.env);
+            set_pins_semantics(opt.model, opt.inv_expr, opt.env, NULL);
             set_cycle_proviso ();
         }
     }
@@ -1846,15 +1842,10 @@ main (int argc, char *argv[])
     HREinitStart(&argc,&argv,1,2,(char**)files,"<model> [<lts>]");
 
     Warning (info, "Loading model from %s", files[0]);
-    opt.model=GBcreateBase();
-    GBsetChunkMethods(opt.model,new_string_index,NULL,
-                      (int2chunk_t)HREgreyboxI2C,
-                      (chunk2int_t)HREgreyboxC2I,
-                      (chunkatint_t)HREgreyboxCAtI,
-                      (get_count_t)HREgreyboxCount);
+    opt.model = GBcreateBase();
+    GBsetChunkMap (opt.model, simple_table_factory_create());
 
-    GBloadFile(opt.model,files[0]);
-    opt.model = GBwrapModel(opt.model);
+    GBloadFile(opt.model,files[0],&opt.model);
 
     lts_type_t ltstype=GBgetLTStype(opt.model);
     global.N=lts_type_get_state_length(ltstype);
@@ -1870,6 +1861,8 @@ main (int argc, char *argv[])
     gsea_setup_default();
     gsea_print_setup ();
     gsea_search(src);
+
+    GBExit(opt.model);
 
     HREexit(LTSMIN_EXIT_SUCCESS);
 }

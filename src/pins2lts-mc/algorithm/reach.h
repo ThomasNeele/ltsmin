@@ -26,6 +26,7 @@
 #include <ltsmin-lib/ltsmin-syntax.h>
 #include <mc-lib/lb.h>
 #include <mc-lib/statistics.h>
+#include <pins-lib/pins-util.h>
 #include <pins-lib/property-semantics.h>
 #include <pins2lts-mc/algorithm/algorithm.h>
 #include <util-lib/fast_set.h>
@@ -36,7 +37,6 @@ extern struct poptOption reach_options[];
 extern char            *act_detect;
 extern char            *inv_detect;
 extern int              dlk_detect;
-extern int              no_exit;
 extern size_t           max_level;
 
 typedef struct counter_s {
@@ -117,8 +117,11 @@ deadlock_detect (wctx_t *ctx, size_t count)
     alg_local_t        *loc = ctx->local;
     loc->counters.deadlocks++; // counting is costless
     state_data_t        state = state_info_state (ctx->state);
-    if (GBstateIsValidEnd(ctx->model, state)) return;
+    if (pins_state_is_valid_end(ctx->model, state)) return;
     if ( !loc->inv_expr ) loc->counters.violations++;
+
+    if (dlk_detect)
+        global->exit_status = LTSMIN_EXIT_COUNTER_EXAMPLE;
     if (dlk_detect && (!no_exit || trc_output) && run_stop(ctx->run)) {
         Warning (info, " ");
         Warning (info, "Deadlock found in state at depth %zu!",
@@ -137,9 +140,10 @@ invariant_detect (wctx_t *ctx)
 
     state_data_t        state = state_info_state (ctx->state);
     if (EXPECT_TRUE(
-            eval_predicate(ctx->model, loc->inv_expr, NULL, state, N, loc->env)))
+            eval_predicate(ctx->model, loc->inv_expr, state, loc->env)))
         return;
 
+    global->exit_status = LTSMIN_EXIT_COUNTER_EXAMPLE;
     loc->counters.violations++;
     if ((!no_exit || trc_output) && run_stop(ctx->run)) {
         Warning (info, " ");
@@ -161,12 +165,10 @@ action_detect (wctx_t *ctx, transition_info_t *ti, state_info_t *successor)
 
     alg_local_t        *loc = ctx->local;
     alg_global_t       *sm = ctx->global;
-    alg_shared_t       *shared = ctx->run->shared;
 
     loc->counters.errors++;
+    global->exit_status = LTSMIN_EXIT_COUNTER_EXAMPLE;
     if ((!no_exit || trc_output) && run_stop(ctx->run)) {
-        if (trc_output && successor->ref != ctx->state->ref) // race, but ok:
-            atomic_write(&shared->parent_ref[successor->ref], ctx->state->ref);
         raw_data_t          data = dfs_stack_push (sm->stack, NULL);
         state_info_serialize (successor, data);
         dfs_stack_enter (sm->stack);

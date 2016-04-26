@@ -250,6 +250,7 @@ ta_cndfs_previous (wctx_t *ctx, state_info_t *s)
     }
     void              *data;
     int res = fset_find (loc->cyan2, &hash, &s->ref, &data, false);
+    HREassert (res != FSET_FULL, "Cyan2 table full");
     HREassert (res, "state %zu not in Cyan2 table", s->ref);
     *(lm_loc_t *)data = loc->lloc;      // write new current pointer to hash map
 }
@@ -262,6 +263,7 @@ ta_cndfs_subsumes_cyan (wctx_t *ctx, state_info_t *s)
     hash32_t            hash = ref_hash (s->ref);
     void               *data;
     int res = fset_find (ta_loc->cyan2, &hash, &s->ref, &data, false);
+    HREassert (res != FSET_FULL, "Cyan2 table full");
     ta_loc->lloc = *(lm_loc_t *)data;
     if (!res)
         return false;
@@ -364,7 +366,7 @@ ta_cndfs_handle_red (void *arg, state_info_t *successor, transition_info_t *ti, 
 static inline int
 is_acc (wctx_t* ctx, state_info_t *si)
 {
-    return GBbuchiIsAccepting (ctx->model, state_info_state(si));
+    return pins_state_is_accepting (ctx->model, state_info_state(si));
 }
 
 static void
@@ -427,7 +429,7 @@ ta_cndfs_red (wctx_t *ctx, ref_t seed, lattice_t l_seed)
                  !ta_cndfs_has_state(ta_loc->pink, ctx->state, true) ) {
                 dfs_stack_push (cndfs_loc->in_stack, state_data);
                 if ( ctx->state->ref != seed && ctx->state->lattice != l_seed &&
-                     GBbuchiIsAccepting(ctx->model, state_info_state(ctx->state)) )
+                     pins_state_is_accepting(ctx->model, state_info_state(ctx->state)) )
                     dfs_stack_push (cndfs_loc->out_stack, state_data);
                 ta_cndfs_explore_state_red (ctx);
             } else {
@@ -502,7 +504,7 @@ ta_cndfs_blue (run_t *run, wctx_t *ctx)
                 int red = ta_cndfs_mark (ctx, ctx->state, LM_RED);
                 loc->counters.allred += red;
                 loc->red.allred += 1 - red;
-            } else if ( GBbuchiIsAccepting(ctx->model, state_info_state (ctx->state)) ) {
+            } else if ( pins_state_is_accepting(ctx->model, state_info_state (ctx->state)) ) {
                 ta_cndfs_red (ctx, ctx->state->ref, ctx->state->lattice);
                 ta_cndfs_handle_nonseed_accepting (ctx);
             } else if (all_red && ctx->counters->level_cur > 0 &&
