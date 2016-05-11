@@ -1,0 +1,469 @@
+State 0:
+          input ::= * exp_spec
+          input ::= * ERROR
+          exp_spec ::= * PAR sync_actions IN proc_section END PAR
+          exp_spec ::= * PAR IN proc_section END PAR
+          exp_spec ::= * PAR USING sync_vectors IN proc_section END PAR
+          exp_spec ::= * DES LPAR NUMBER COMMA NUMBER COMMA NUMBER RPAR trans_list
+          exp_spec ::= * STRING
+          exp_spec ::= * error
+
+                         ERROR shift  20
+                           PAR shift  6
+                           DES shift  22
+                        STRING shift  46
+                         error shift  47
+                         input accept
+                      exp_spec shift  19
+
+State 1:
+          exp_spec ::= PAR USING * sync_vectors IN proc_section END PAR
+          sync_vectors ::= * sync_vectors COMMA sync_rule
+          sync_vectors ::= * sync_rule
+          sync_rule ::= * actions ARROW ACTION
+          actions ::= * actions STAR action
+          actions ::= * action
+          action ::= * UNDERSCORE
+          action ::= * ACTION
+
+                        ACTION shift  58
+                    UNDERSCORE shift  57
+                  sync_vectors shift  16
+                     sync_rule shift  60
+                       actions shift  18
+                        action shift  59
+
+State 2:
+          exp_spec ::= * PAR sync_actions IN proc_section END PAR
+          exp_spec ::= PAR sync_actions IN * proc_section END PAR
+          exp_spec ::= * PAR IN proc_section END PAR
+          exp_spec ::= * PAR USING sync_vectors IN proc_section END PAR
+          exp_spec ::= * DES LPAR NUMBER COMMA NUMBER COMMA NUMBER RPAR trans_list
+          exp_spec ::= * STRING
+          exp_spec ::= * error
+          proc_section ::= * proc_section BARS exp_spec
+          proc_section ::= * exp_spec
+
+                           PAR shift  6
+                           DES shift  22
+                        STRING shift  46
+                         error shift  47
+                      exp_spec shift  49
+                  proc_section shift  13
+
+State 3:
+          exp_spec ::= * PAR sync_actions IN proc_section END PAR
+          exp_spec ::= * PAR IN proc_section END PAR
+          exp_spec ::= PAR IN * proc_section END PAR
+          exp_spec ::= * PAR USING sync_vectors IN proc_section END PAR
+          exp_spec ::= * DES LPAR NUMBER COMMA NUMBER COMMA NUMBER RPAR trans_list
+          exp_spec ::= * STRING
+          exp_spec ::= * error
+          proc_section ::= * proc_section BARS exp_spec
+          proc_section ::= * exp_spec
+
+                           PAR shift  6
+                           DES shift  22
+                        STRING shift  46
+                         error shift  47
+                      exp_spec shift  49
+                  proc_section shift  15
+
+State 4:
+          exp_spec ::= * PAR sync_actions IN proc_section END PAR
+          exp_spec ::= * PAR IN proc_section END PAR
+          exp_spec ::= * PAR USING sync_vectors IN proc_section END PAR
+          exp_spec ::= PAR USING sync_vectors IN * proc_section END PAR
+          exp_spec ::= * DES LPAR NUMBER COMMA NUMBER COMMA NUMBER RPAR trans_list
+          exp_spec ::= * STRING
+          exp_spec ::= * error
+          proc_section ::= * proc_section BARS exp_spec
+          proc_section ::= * exp_spec
+
+                           PAR shift  6
+                           DES shift  22
+                        STRING shift  46
+                         error shift  47
+                      exp_spec shift  49
+                  proc_section shift  17
+
+State 5:
+          sync_vectors ::= sync_vectors COMMA * sync_rule
+          sync_rule ::= * actions ARROW ACTION
+          actions ::= * actions STAR action
+          actions ::= * action
+          action ::= * UNDERSCORE
+          action ::= * ACTION
+
+                        ACTION shift  58
+                    UNDERSCORE shift  57
+                     sync_rule shift  54
+                       actions shift  18
+                        action shift  59
+
+State 6:
+          exp_spec ::= PAR * sync_actions IN proc_section END PAR
+          exp_spec ::= PAR * IN proc_section END PAR
+          exp_spec ::= PAR * USING sync_vectors IN proc_section END PAR
+          sync_actions ::= * sync_actions COMMA sync_action
+          sync_actions ::= * sync_action
+          sync_action ::= * ACTION HASH NUMBER
+          sync_action ::= * ACTION
+
+                            IN shift  3
+                         USING shift  1
+                        ACTION shift  37
+                  sync_actions shift  12
+                   sync_action shift  61
+
+State 7:
+          exp_spec ::= * PAR sync_actions IN proc_section END PAR
+          exp_spec ::= * PAR IN proc_section END PAR
+          exp_spec ::= * PAR USING sync_vectors IN proc_section END PAR
+          exp_spec ::= * DES LPAR NUMBER COMMA NUMBER COMMA NUMBER RPAR trans_list
+          exp_spec ::= * STRING
+          exp_spec ::= * error
+          proc_section ::= proc_section BARS * exp_spec
+
+                           PAR shift  6
+                           DES shift  22
+                        STRING shift  46
+                         error shift  47
+                      exp_spec shift  48
+
+State 8:
+          actions ::= actions STAR * action
+          action ::= * UNDERSCORE
+          action ::= * ACTION
+
+                        ACTION shift  58
+                    UNDERSCORE shift  57
+                        action shift  56
+
+State 9:
+      (5) exp_spec ::= DES LPAR NUMBER COMMA NUMBER COMMA NUMBER RPAR trans_list *
+          trans_list ::= trans_list * trans
+          trans ::= * LPAR NUMBER COMMA STRING COMMA NUMBER RPAR
+          trans ::= * LPAR NUMBER COMMA ACTION COMMA NUMBER RPAR
+
+                          LPAR shift  29
+                         trans shift  43
+                     {default} reduce 5
+
+State 10:
+          sync_actions ::= sync_actions COMMA * sync_action
+          sync_action ::= * ACTION HASH NUMBER
+          sync_action ::= * ACTION
+
+                        ACTION shift  37
+                   sync_action shift  50
+
+State 11:
+          exp_spec ::= DES LPAR NUMBER COMMA NUMBER COMMA NUMBER RPAR * trans_list
+          trans_list ::= * trans_list trans
+     (22) trans_list ::= *
+
+                    trans_list shift  9
+                     {default} reduce 22
+
+State 12:
+          exp_spec ::= PAR sync_actions * IN proc_section END PAR
+          sync_actions ::= sync_actions * COMMA sync_action
+
+                            IN shift  2
+                         COMMA shift  10
+
+State 13:
+          exp_spec ::= PAR sync_actions IN proc_section * END PAR
+          proc_section ::= proc_section * BARS exp_spec
+
+                           END shift  21
+                          BARS shift  7
+
+State 14:
+          trans ::= LPAR NUMBER COMMA * STRING COMMA NUMBER RPAR
+          trans ::= LPAR NUMBER COMMA * ACTION COMMA NUMBER RPAR
+
+                        STRING shift  31
+                        ACTION shift  34
+
+State 15:
+          exp_spec ::= PAR IN proc_section * END PAR
+          proc_section ::= proc_section * BARS exp_spec
+
+                           END shift  39
+                          BARS shift  7
+
+State 16:
+          exp_spec ::= PAR USING sync_vectors * IN proc_section END PAR
+          sync_vectors ::= sync_vectors * COMMA sync_rule
+
+                            IN shift  4
+                         COMMA shift  5
+
+State 17:
+          exp_spec ::= PAR USING sync_vectors IN proc_section * END PAR
+          proc_section ::= proc_section * BARS exp_spec
+
+                           END shift  40
+                          BARS shift  7
+
+State 18:
+          sync_rule ::= actions * ARROW ACTION
+          actions ::= actions * STAR action
+
+                         ARROW shift  41
+                          STAR shift  8
+
+State 19:
+      (0) input ::= exp_spec *
+
+                             $ reduce 0
+
+State 20:
+      (1) input ::= ERROR *
+
+                             $ reduce 1
+
+State 21:
+          exp_spec ::= PAR sync_actions IN proc_section END * PAR
+
+                           PAR shift  42
+
+State 22:
+          exp_spec ::= DES * LPAR NUMBER COMMA NUMBER COMMA NUMBER RPAR trans_list
+
+                          LPAR shift  23
+
+State 23:
+          exp_spec ::= DES LPAR * NUMBER COMMA NUMBER COMMA NUMBER RPAR trans_list
+
+                        NUMBER shift  24
+
+State 24:
+          exp_spec ::= DES LPAR NUMBER * COMMA NUMBER COMMA NUMBER RPAR trans_list
+
+                         COMMA shift  25
+
+State 25:
+          exp_spec ::= DES LPAR NUMBER COMMA * NUMBER COMMA NUMBER RPAR trans_list
+
+                        NUMBER shift  26
+
+State 26:
+          exp_spec ::= DES LPAR NUMBER COMMA NUMBER * COMMA NUMBER RPAR trans_list
+
+                         COMMA shift  27
+
+State 27:
+          exp_spec ::= DES LPAR NUMBER COMMA NUMBER COMMA * NUMBER RPAR trans_list
+
+                        NUMBER shift  28
+
+State 28:
+          exp_spec ::= DES LPAR NUMBER COMMA NUMBER COMMA NUMBER * RPAR trans_list
+
+                          RPAR shift  11
+
+State 29:
+          trans ::= LPAR * NUMBER COMMA STRING COMMA NUMBER RPAR
+          trans ::= LPAR * NUMBER COMMA ACTION COMMA NUMBER RPAR
+
+                        NUMBER shift  30
+
+State 30:
+          trans ::= LPAR NUMBER * COMMA STRING COMMA NUMBER RPAR
+          trans ::= LPAR NUMBER * COMMA ACTION COMMA NUMBER RPAR
+
+                         COMMA shift  14
+
+State 31:
+          trans ::= LPAR NUMBER COMMA STRING * COMMA NUMBER RPAR
+
+                         COMMA shift  32
+
+State 32:
+          trans ::= LPAR NUMBER COMMA STRING COMMA * NUMBER RPAR
+
+                        NUMBER shift  33
+
+State 33:
+          trans ::= LPAR NUMBER COMMA STRING COMMA NUMBER * RPAR
+
+                          RPAR shift  44
+
+State 34:
+          trans ::= LPAR NUMBER COMMA ACTION * COMMA NUMBER RPAR
+
+                         COMMA shift  35
+
+State 35:
+          trans ::= LPAR NUMBER COMMA ACTION COMMA * NUMBER RPAR
+
+                        NUMBER shift  36
+
+State 36:
+          trans ::= LPAR NUMBER COMMA ACTION COMMA NUMBER * RPAR
+
+                          RPAR shift  45
+
+State 37:
+          sync_action ::= ACTION * HASH NUMBER
+     (11) sync_action ::= ACTION *
+
+                          HASH shift  38
+                     {default} reduce 11
+
+State 38:
+          sync_action ::= ACTION HASH * NUMBER
+
+                        NUMBER shift  51
+
+State 39:
+          exp_spec ::= PAR IN proc_section END * PAR
+
+                           PAR shift  52
+
+State 40:
+          exp_spec ::= PAR USING sync_vectors IN proc_section END * PAR
+
+                           PAR shift  53
+
+State 41:
+          sync_rule ::= actions ARROW * ACTION
+
+                        ACTION shift  55
+
+State 42:
+      (2) exp_spec ::= PAR sync_actions IN proc_section END PAR *
+
+                     {default} reduce 2
+
+State 43:
+     (21) trans_list ::= trans_list trans *
+
+                     {default} reduce 21
+
+State 44:
+     (23) trans ::= LPAR NUMBER COMMA STRING COMMA NUMBER RPAR *
+
+                     {default} reduce 23
+
+State 45:
+     (24) trans ::= LPAR NUMBER COMMA ACTION COMMA NUMBER RPAR *
+
+                     {default} reduce 24
+
+State 46:
+      (6) exp_spec ::= STRING *
+
+                     {default} reduce 6
+
+State 47:
+      (7) exp_spec ::= error *
+
+                     {default} reduce 7
+
+State 48:
+     (19) proc_section ::= proc_section BARS exp_spec *
+
+                     {default} reduce 19
+
+State 49:
+     (20) proc_section ::= exp_spec *
+
+                     {default} reduce 20
+
+State 50:
+      (8) sync_actions ::= sync_actions COMMA sync_action *
+
+                     {default} reduce 8
+
+State 51:
+     (10) sync_action ::= ACTION HASH NUMBER *
+
+                     {default} reduce 10
+
+State 52:
+      (3) exp_spec ::= PAR IN proc_section END PAR *
+
+                     {default} reduce 3
+
+State 53:
+      (4) exp_spec ::= PAR USING sync_vectors IN proc_section END PAR *
+
+                     {default} reduce 4
+
+State 54:
+     (12) sync_vectors ::= sync_vectors COMMA sync_rule *
+
+                     {default} reduce 12
+
+State 55:
+     (14) sync_rule ::= actions ARROW ACTION *
+
+                     {default} reduce 14
+
+State 56:
+     (15) actions ::= actions STAR action *
+
+                     {default} reduce 15
+
+State 57:
+     (17) action ::= UNDERSCORE *
+
+                     {default} reduce 17
+
+State 58:
+     (18) action ::= ACTION *
+
+                     {default} reduce 18
+
+State 59:
+     (16) actions ::= action *
+
+                     {default} reduce 16
+
+State 60:
+     (13) sync_vectors ::= sync_rule *
+
+                     {default} reduce 13
+
+State 61:
+      (9) sync_actions ::= sync_action *
+
+                     {default} reduce 9
+
+----------------------------------------------------
+Symbols:
+    0: $:
+    1: ERROR
+    2: PAR
+    3: IN
+    4: END
+    5: USING
+    6: DES
+    7: LPAR
+    8: NUMBER
+    9: COMMA
+   10: RPAR
+   11: STRING
+   12: ACTION
+   13: HASH
+   14: ARROW
+   15: STAR
+   16: UNDERSCORE
+   17: BARS
+   18: USER
+   19: error:
+   20: input: ERROR PAR DES STRING
+   21: exp_spec: PAR DES STRING
+   22: sync_actions: ACTION
+   23: proc_section: PAR DES STRING
+   24: sync_vectors: ACTION UNDERSCORE
+   25: trans_list: <lambda> LPAR
+   26: sync_action: ACTION
+   27: sync_rule: ACTION UNDERSCORE
+   28: actions: ACTION UNDERSCORE
+   29: action: ACTION UNDERSCORE
+   30: trans: LPAR
