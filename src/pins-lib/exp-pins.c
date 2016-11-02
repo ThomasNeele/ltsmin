@@ -26,21 +26,33 @@ struct poptOption exp_options[]= {
         POPT_TABLEEND
 };
 
+typedef struct exp_int_trans_s {
+    int num;
+    int* label;
+    int* dest;
+} *exp_int_trans_t ;
+
 typedef struct exp_pins_ctx_s {
-    exp_model_t      model;
+    exp_model_t       model;
     /** Collection of syncing gates for each process */
-    string_index_t*  sync_gates;
+    string_index_t*   sync_gates;
     /** Offset of each sync rule in the sequence of groups
      *  from gate based sync rule to concrete sync rule offset
      */
-    int*             group_offset;
+    int*              group_offset;
     /** From concrete sync rule offset to gate based
      *  sync rule offset
      */
-    int*             label_index;
-    int              num_labels;
+    int*              label_index;
+    int               num_labels;
     /** Collection of offers for each sync rule */
-    string_index_t*  sync_offers;
+    string_index_t*   sync_offers;
+    /** Transitions with integer labels */
+    exp_int_trans_t**  trans_int;
+    /** Sync rules with integer labels */
+    int**              sync_rules_int;
+    /** One bitvector per process to indicate which actions are local*/
+    bitvector_t*       sync_actions;
 } *exp_pins_ctx_t ;
 
 static exp_model_t exp_flatten_network(exp_model_t model) {
@@ -255,63 +267,45 @@ int exp_next_long(model_t self, int group, int *src, TransitionCB cb, void *user
     int num_transitions = 0;
 
     if(group < model->num_processes) {
-        exp_trans_t trans = model->processes[group].transitions[src[group]];
+        exp_int_trans_t trans = context->trans_int[group][src[group]];
         for (int i = 0; trans != NULL && i < trans->num; i++) {
-            char* label = trans->label[i];
-            while(label) {
-                int is_local_transition = 1;
-                for (int j = 0; j < model->num_sync_rules; j++) {
-                    if (exp_matching_gate(model->sync_rules[j][group],
-                                          label)) {
-                        is_local_transition = 0;
-                        break;
-                    }
-                }
-                if (is_local_transition) {
-                    memcpy(dst, src, sizeof(int) * model->num_processes);
-                    dst[group] = trans->dest[i];
-                    cb(user_context, &ti, dst, NULL);
-                    num_transitions++;
-                }
-                exp_next_label(&label);
+            int label = trans->label[i];
+            if(bitvector_is_set(&context->sync_actions[group], (size_t) label) == 0) {
+                memcpy(dst, src, sizeof(int) * model->num_processes);
+                dst[group] = trans->dest[i];
+                cb(user_context, &ti, dst, NULL);
+                num_transitions++;
             }
         }
     } else {
-        int rule_number = context->label_index[group - model->num_processes];
-        int offer_nr = group - model->num_processes - context->group_offset[rule_number];
-        char* offer = SIget(context->sync_offers[rule_number], offer_nr);
+        int rule_number = group - model->num_processes;
         int is_applicable = 1;
         int process_counter = 0;
         int process_index[model->num_processes];
         int process_num_transitions[model->num_processes];
         int max_succ = 0;
         for(int i = 0; i < model->num_processes; i++) {
-            if (model->sync_rules[rule_number][i] != NULL &&
-                model->processes[i].transitions[src[i]] != NULL &&
-                max_succ < model->processes[i].transitions[src[i]]->num) {
-                max_succ = model->processes[i].transitions[src[i]]->num;
+            if (context->sync_rules_int[rule_number][i] != -1 &&
+                context->trans_int[i][src[i]] != NULL &&
+                max_succ < context->trans_int[i][src[i]]->num) {
+                max_succ = context->trans_int[i][src[i]]->num;
             }
         }
         int target_states[model->num_processes][max_succ];
         for(int i = 0; i < model->num_processes; i++) {
-            if(model->sync_rules[rule_number][i] != NULL) {
-                if(model->processes[i].transitions[src[i]] == NULL) {
+            if(context->sync_rules_int[rule_number][i] != -1) {
+                if(context->trans_int[i][src[i]] == NULL) {
                     // This state is a deadlock
                     is_applicable = 0;
                     break;
                 }
                 int num_enabled = 0;
-                exp_trans_t trans = model->processes[i].transitions[src[i]];
+                exp_int_trans_t trans =  context->trans_int[i][src[i]];
                 for (int j = 0; j < trans->num; j++) {
-                    char* label = trans->label[j];
-                    while(label) {
-                        if (exp_matching_gate(model->sync_rules[rule_number][i],label) &&
-                                exp_matching_offers(offer, label)) {
-                            target_states[process_counter][num_enabled] = j;
-                            num_enabled++;
-                            break;
-                        }
-                        exp_next_label(&label);
+                    int label = trans->label[j];
+                    if(label == context->sync_rules_int[rule_number][i]) {
+                        target_states[process_counter][num_enabled] = j;
+                        num_enabled++;
                     }
                 }
                 if(num_enabled == 0) {
@@ -332,33 +326,13 @@ int exp_next_long(model_t self, int group, int *src, TransitionCB cb, void *user
             trans_counter[i] = 0;
         }
         while(trans_counter[process_counter] == 0) {
-            int all_processes_match = 1;
-            for (int i = 0; i < process_counter; i++) {
-                char* label = model->processes[process_index[i]]
-                        .transitions[src[process_index[i]]]->label[target_states[i][trans_counter[i]]];
-                int this_process_matches = 0;
-                while(label) {
-                    if (exp_matching_gate(model->sync_rules[rule_number][process_index[i]], label) &&
-                        exp_matching_offers(offer, label)) {
-                        this_process_matches = 1;
-                        break;
-                    }
-                    exp_next_label(&label);
-                }
-                if(!this_process_matches) {
-                    all_processes_match = 0;
-                    break;
-                }
+            memcpy(dst, src, sizeof(int) * model->num_processes);
+            for (int j = 0; j < process_counter; j++) {
+                dst[process_index[j]] = context->trans_int[process_index[j]]
+                        [src[process_index[j]]]->dest[target_states[j][trans_counter[j]]];
             }
-            if(all_processes_match) {
-                memcpy(dst, src, sizeof(int) * model->num_processes);
-                for (int j = 0; j < process_counter; j++) {
-                    dst[process_index[j]] = model->processes[process_index[j]]
-                            .transitions[src[process_index[j]]]->dest[target_states[j][trans_counter[j]]];
-                }
-                cb(user_context, &ti, dst, NULL);
-                num_transitions++;
-            }
+            cb(user_context, &ti, dst, NULL);
+            num_transitions++;
             int i = 0;
             do {
                 trans_counter[i] = (trans_counter[i] + 1) % (i < process_counter ? process_num_transitions[i] : 2);
@@ -381,44 +355,24 @@ int exp_label_long(model_t self, int label, int* src) {
     exp_pins_ctx_t context = GBgetContext(self);
     exp_model_t model = context->model;
     if(label < model->num_processes) {
-        exp_trans_t trans = model->processes[label].transitions[src[label]];
+        exp_int_trans_t trans = context->trans_int[label][src[label]];
         for(int i = 0; trans != NULL && i < trans->num; i++) {
-            char *trans_label = trans->label[i];
-            while (trans_label) {
-                char* offer_begin = strpbrk(trans_label,"!? (\t\x1f");
-                char tmp;
-                if(offer_begin != NULL) {
-                    tmp = offer_begin[0];
-                    offer_begin[0] = '\0';
-                }
-                if (SIlookup(context->sync_gates[label], trans_label) == SI_INDEX_FAILED) {
-                    // Found a local action
-                    if(offer_begin != NULL) {
-                        offer_begin[0] = tmp;
-                    }
-                    return 1;
-                }
-                if(offer_begin != NULL) {
-                    offer_begin[0] = tmp;
-                }
-                exp_next_label(&trans_label);
+            int trans_label = trans->label[i];
+            if(bitvector_is_set(&context->sync_actions[label], (size_t) trans_label) == 0) {
+                // Found a local action
+                return 1;
             }
         }
     } else {
         label -= model->num_processes;
         int proc_nr = label % model->num_processes;
-        int rule_nr = context->label_index[label / model->num_processes];
-        int offer_nr = label / model->num_processes - context->group_offset[rule_nr];
-        exp_trans_t trans = model->processes[proc_nr].transitions[src[proc_nr]];
+        int rule_nr = label / model->num_processes;
+        exp_int_trans_t trans = context->trans_int[proc_nr][src[proc_nr]];
         for(int i = 0; trans != NULL && i < trans->num; i++) {
-            char *trans_label = trans->label[i];
-            while (trans_label) {
-                if (exp_matching_gate(trans_label, model->sync_rules[rule_nr][proc_nr]) &&
-                    exp_matching_offers(trans_label, SIget(context->sync_offers[rule_nr], offer_nr))) {
-                    // Found a matching sync action
-                    return 1;
-                }
-                exp_next_label(&trans_label);
+            int trans_label = trans->label[i];
+            if(trans_label == context->sync_rules_int[rule_nr][proc_nr]) {
+                // Found a matching sync action
+                return 1;
             }
         }
     }
@@ -484,37 +438,62 @@ static int guard_to_group(exp_pins_ctx_t context, int guard) {
     }
 }
 
-//static void make_context_trans(exp_model_t model, exp_pins_ctx_t context) {
-//    context->transitions = RTmalloc(sizeof(exp_trans_t*) * model->num_processes);
-//    for(int i = 0; i < model->num_processes; i++) {
-//        context->transitions[i] = RTmalloc(sizeof(exp_trans_t) * model->processes[i].process_states);
-//        exp_trans_t* trans = context->transitions[i];
-//        for(int j = 0; j < model->processes[i].process_states; j++) {
-//            int num_succ = 0;
-//            if(model->processes[i].transitions[j]) {
-//                for (int k = 0; k < model->processes[i].process_states; k++) {
-//                    if (model->processes[i].transitions[j][k]) {
-//                        num_succ++;
-//                    }
-//                }
-//            }
-//            trans[j] = RTmalloc(sizeof(struct exp_trans_s));
-//            trans[j]->num = num_succ;
-//            trans[j]->label = RTmalloc(sizeof(char*) * num_succ);
-//            trans[j]->dest = RTmalloc(sizeof(int) * num_succ);
-//            int succ_counter = 0;
-//            if(model->processes[i].transitions[j]) {
-//                for (int k = 0; k < model->processes[i].process_states; k++) {
-//                    if (model->processes[i].transitions[j][k]) {
-//                        trans[j]->label[succ_counter] = model->processes[i].transitions[j][k];
-//                        trans[j]->dest[succ_counter] = k;
-//                        succ_counter++;
-//                    }
-//                }
-//            }
-//        }
-//    }
-//}
+static void make_context_trans(exp_model_t model, exp_pins_ctx_t context) {
+    exp_int_trans_t** trans = RTmalloc(model->num_processes * sizeof(exp_int_trans_t*));
+    for(int i = 0; i < model->num_processes; i++) {
+        trans[i] = RTmalloc(model->processes[i].process_states * sizeof(exp_int_trans_t));
+        for(int j = 0; j < model->processes[i].process_states; j++) {
+            trans[i][j] = RTmallocZero(sizeof(struct exp_int_trans_s));
+            int array_size = 0;
+            for(int k = 0; model->processes[i].transitions[j] != NULL && k < model->processes[i].transitions[j]->num; k++) {
+                char* trans_label = model->processes[i].transitions[j]->label[k];
+                while(trans_label) {
+                    char* next_label = strpbrk(trans_label,"\x1f");
+                    char tmp;
+                    if(next_label != NULL) {
+                        tmp = next_label[0];
+                        next_label[0] = '\0';
+                    }
+                    if(trans[i][j]->num + 1 > array_size) {
+                        array_size = array_size == 0 ? 1 : array_size << 1;
+                        trans[i][j]->label = RTrealloc(trans[i][j]->label, array_size * sizeof(int));
+                        trans[i][j]->dest = RTrealloc(trans[i][j]->dest, array_size * sizeof(int));
+                    }
+                    trans[i][j]->label[trans[i][j]->num] = SIlookup(model->action_labels, trans_label);
+                    trans[i][j]->dest[trans[i][j]->num] = model->processes[i].transitions[j]->dest[k];
+                    trans[i][j]->num++;
+                    if(next_label != NULL) {
+                        next_label[0] = tmp;
+                    }
+                    exp_next_label(&trans_label);
+                }
+            }
+        }
+    }
+    context->trans_int = trans;
+
+    char *buf = RTmalloc(sizeof(char) * 256);
+    int** new_sync_rules = RTmalloc(sizeof(int*) * context->group_offset[model->num_sync_rules]);
+    bitvector_t* sync_actions = RTmalloc(sizeof(bitvector_t) * model->num_processes);
+    for(int i = 0; i < model->num_processes; i++) {
+        bitvector_create(&sync_actions[i], (size_t) SIgetCount(model->action_labels));
+    }
+    for(int i = 0; i < context->group_offset[model->num_sync_rules]; i++) {
+        new_sync_rules[i] = RTmalloc(sizeof(int) * model->num_processes);
+        for(int j = 0; j < model->num_processes; j++) {
+            if(model->sync_rules[context->label_index[i]][j] != NULL) {
+                snprintf(buf, 256, "%s%s", model->sync_rules[context->label_index[i]][j],
+                         SIget(context->sync_offers[context->label_index[i]], i - context->group_offset[context->label_index[i]]));
+                new_sync_rules[i][j] = SIlookup(model->action_labels, buf);
+                bitvector_set(&sync_actions[j], (size_t) new_sync_rules[i][j]);
+            } else {
+                new_sync_rules[i][j] = -1;
+            }
+        }
+    }
+    context->sync_rules_int = new_sync_rules;
+    context->sync_actions = sync_actions;
+}
 
 void EXPloadGreyboxModel(model_t model, const char *filename) {
     exp_model_t exp_model = exp_parse_stream(filename);
@@ -543,6 +522,7 @@ void EXPloadGreyboxModel(model_t model, const char *filename) {
         context->label_index[i] = offset;
     }
     context->label_index[num_sync_groups] = exp_model->num_sync_rules;
+    make_context_trans(exp_model, context);
 
     lts_type_t ltstype = lts_type_create();
     lts_type_set_state_length(ltstype, exp_model->num_processes);
