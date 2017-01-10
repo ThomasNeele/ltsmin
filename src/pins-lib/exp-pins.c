@@ -271,6 +271,8 @@ int exp_next_long(model_t self, int group, int *src, TransitionCB cb, void *user
         for (int i = 0; trans != NULL && i < trans->num; i++) {
             int label = trans->label[i];
             if(bitvector_is_set(&context->sync_actions[group], (size_t) label) == 0) {
+                int labels[] = {label};
+                ti.labels = labels;
                 memcpy(dst, src, sizeof(int) * model->num_processes);
                 dst[group] = trans->dest[i];
                 cb(user_context, &ti, dst, NULL);
@@ -284,11 +286,13 @@ int exp_next_long(model_t self, int group, int *src, TransitionCB cb, void *user
         int process_index[model->num_processes];
         int process_num_transitions[model->num_processes];
         int max_succ = 0;
+        int action_label = -1;
         for(int i = 0; i < model->num_processes; i++) {
             if (context->sync_rules_int[rule_number][i] != -1 &&
                 context->trans_int[i][src[i]] != NULL &&
                 max_succ < context->trans_int[i][src[i]]->num) {
                 max_succ = context->trans_int[i][src[i]]->num;
+                action_label = context->sync_rules_int[rule_number][i];
             }
         }
         int target_states[model->num_processes][max_succ];
@@ -320,6 +324,8 @@ int exp_next_long(model_t self, int group, int *src, TransitionCB cb, void *user
         if(is_applicable == 0) {
             return 0;
         }
+        int labels[] = {action_label};
+        ti.labels = labels;
 
         int trans_counter[process_counter + 1];
         for(int i = 0; i < process_counter + 1; i++) {
@@ -528,7 +534,13 @@ void EXPloadGreyboxModel(model_t model, const char *filename) {
     lts_type_set_state_length(ltstype, exp_model->num_processes);
     // Each process has a guard for each action
     lts_type_set_state_label_count(ltstype, num_labels);
-    lts_type_set_edge_label_count(ltstype, 0);
+
+    // Store the edge labels
+    int act_type = lts_type_add_type(ltstype, "action", NULL);
+    lts_type_set_format(ltstype, act_type, LTStypeEnum);
+    lts_type_set_edge_label_count(ltstype, 1);
+    lts_type_set_edge_label_name(ltstype, 0, "action");
+    lts_type_set_edge_label_typeno(ltstype, 0, act_type);
 
     int* init_state = RTmalloc(sizeof(int) * exp_model->num_processes);
     matrix_t* p_dm = RTmalloc(sizeof(matrix_t));
@@ -575,9 +587,11 @@ void EXPloadGreyboxModel(model_t model, const char *filename) {
             if(exp_model->sync_rules[rule_nr][j]) {
                 guard->guard[guard->count] = exp_model->num_processes + i * exp_model->num_processes + j;
                 guard->count++;
+                snprintf(buf, 256, "proc%d.act%d %s%s", j, i, exp_model->sync_rules[rule_nr][j], SIget(context->sync_offers[rule_nr], offer_nr));
+            } else {
+                snprintf(buf, 256, "proc%d.nonsync%d", j, i);
             }
 
-            snprintf(buf, 256, "proc%d.act %s%s", j, exp_model->sync_rules[rule_nr][j], SIget(context->sync_offers[rule_nr], offer_nr));
             lts_type_set_state_label_name(ltstype, exp_model->num_processes + i*exp_model->num_processes + j, buf);
             lts_type_set_state_label_typeno(ltstype, exp_model->num_processes + i*exp_model->num_processes + j, bool_type);
         }
@@ -600,6 +614,9 @@ void EXPloadGreyboxModel(model_t model, const char *filename) {
     GBsetStateLabelsGroup(model, exp_get_labels_group);
 
     GBsetLTStype(model,ltstype);
+    for(int i = 0; i < SIgetCount(exp_model->action_labels); i++) {
+        VTputAtChunk (GBgetChunkMap (model, act_type), chunk_str(SIget(exp_model->action_labels, i)), i);
+    }
 
     GBsetDMInfo(model, p_dm);
     GBsetStateLabelInfo(model, p_sl);
