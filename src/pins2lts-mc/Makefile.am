@@ -55,6 +55,7 @@ exp2lts_mc_SOURCES   = $(mc_sources)
 exp2lts_mc_SOURCES  += ../pins-lib/exp-pins.c ../pins-lib/exp-pins.h
 exp2lts_mc_LDADD     = $(MC_LIBS)
 exp2lts_mc_CPPFLAGS  = -DEXP $(MC_CPPFLAGS)
+nodist_EXTRA_exp2lts_mc_SOURCES = automake-force-linker.cxx # required by Boost & ViennaCL
 
 # pins2lts-mc
 pins2lts_mc_SOURCES   = $(mc_sources)
