@@ -1,3 +1,4 @@
+#include <hre/config.h>
 #include <ltsmin-lib/exp-syntax.h>
 #include <hre/user.h>
 #include <ltsmin-lib/exp-lexer.h>

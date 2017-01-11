@@ -63,7 +63,7 @@ nodist_EXTRA_etf2lts_mc_SOURCES = automake-force-linker.cxx # required by Boost 
 
 # exp2lts-mc
 exp2lts_mc_SOURCES   = $(mc_sources)
-exp2lts_mc_SOURCES  += ../pins-lib/exp-pins.c ../pins-lib/exp-pins.h
+exp2lts_mc_SOURCES  += ../pins-lib/modules/exp-pins.c ../pins-lib/modules/exp-pins.h
 exp2lts_mc_LDADD     = $(MC_LIBS)
 exp2lts_mc_CPPFLAGS  = -DEXP $(MC_CPPFLAGS)
 nodist_EXTRA_exp2lts_mc_SOURCES = automake-force-linker.cxx # required by Boost & ViennaCL

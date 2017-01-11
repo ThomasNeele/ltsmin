@@ -1,7 +1,8 @@
 #include <hre/config.h>
 #include <hre/stringindex.h>
 #include <hre/user.h>
-#include <pins-lib/exp-pins.h>
+#include <pins-lib/modules/exp-pins.h>
+#include <pins-lib/por/pins2pins-por.h>
 
 
 static void exp_popt(poptContext con,

@@ -62,7 +62,7 @@ nodist_EXTRA_etf2lts_sym_SOURCES = automake-force-linker.cxx # req. by vset
 
 # exp2lts-sym
 exp2lts_sym_SOURCES   = pins2lts-sym.c
-exp2lts_sym_SOURCES  += ../pins-lib/exp-pins.c ../pins-lib/exp-pins.h
+exp2lts_sym_SOURCES  += ../pins-lib/modules/exp-pins.c ../pins-lib/modules/exp-pins.h
 exp2lts_sym_LDADD     = $(PINS_LIBS) $(VSET_LIBS)
 exp2lts_sym_CPPFLAGS  = -DEXP $(SYM_CPP_FLAGS)
 exp2lts_sym_LDFLAGS   = $(SYM_LDFLAGS)

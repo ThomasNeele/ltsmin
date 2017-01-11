@@ -17,7 +17,7 @@
 #include <pins-lib/modules/etf-pins.h>
 #endif
 #if defined(EXP)
-#include <pins-lib/exp-pins.h>
+#include <pins-lib/modules/exp-pins.h>
 #endif
 #if defined(DIVINE)
 #include <pins-lib/modules/dve-pins.h>

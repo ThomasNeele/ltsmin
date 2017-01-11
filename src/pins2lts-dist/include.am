@@ -53,7 +53,7 @@ nodist_EXTRA_etf2lts_dist_SOURCES = automake-force-linker.cxx # required by Boos
 
 # exp2lts-dist
 exp2lts_dist_SOURCES   = ../pins2lts-dist.c
-exp2lts_dist_SOURCES  += ../../pins-lib/exp-pins.c ../../pins-lib/exp-pins.h
+exp2lts_dist_SOURCES  += ../../pins-lib/modules/exp-pins.c ../../pins-lib/modules/exp-pins.h
 exp2lts_dist_LDADD     = $(PINS_LIBS)
 exp2lts_dist_CPPFLAGS  = -DEXP $(DIST_CPPFLAGS)
 nodist_EXTRA_exp2lts_dist_SOURCES = automake-force-linker.cxx # required by Boost & ViennaCL

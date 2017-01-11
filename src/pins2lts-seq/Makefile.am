@@ -64,7 +64,7 @@ nodist_EXTRA_etf2lts_seq_SOURCES = automake-force-linker.cxx # req. by vset
 
 # exp2lts-seq
 exp2lts_seq_SOURCES   = pins2lts-seq.c
-exp2lts_seq_SOURCES  += ../pins-lib/exp-pins.c ../pins-lib/exp-pins.h
+exp2lts_seq_SOURCES  += ../pins-lib/modules/exp-pins.c ../pins-lib/modules/exp-pins.h
 exp2lts_seq_LDADD     = $(HRE_LIB) $(PINS_LIBS)
 exp2lts_seq_LDADD    += $(VSET_LIBS)
 exp2lts_seq_CPPFLAGS  = -DEXP $(SEQ_CPPFLAGS)
