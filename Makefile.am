@@ -1,9 +1,11 @@
 ACLOCAL_AMFLAGS = -I m4
 
 SUBDIRS = @subdirs@ lemon examples src testsuite
+if DX_COND_doc
 if HAVE_ASCIIDOC
 if HAVE_XMLTO
 SUBDIRS += doc
+endif
 endif
 endif
 EXTRA_DIST  = ltsminreconf
@@ -35,5 +37,7 @@ distcheck-hook:
 libtool: $(LIBTOOL_DEPS)
 	$(SHELL) ./config.status --recheck
 
+if HAVE_SPINS_COMPILER
 spins/spins.jar:
 	test -f $@ || (cd "${top_srcdir}/spins/src" && $(ANT))
+endif

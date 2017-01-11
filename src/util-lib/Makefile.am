@@ -1,13 +1,13 @@
 noinst_LTLIBRARIES  = libutil.la
 
-pkginclude_HEADERS = chunk_support.h string-map.h
+pkginclude_HEADERS = chunk_support.h string-map.h chunk_table_factory.h tables.h
 
 # libutil
 libutil_la_SOURCES  = balloc.c balloc.h
 libutil_la_SOURCES += bitset.c bitset.h
 libutil_la_SOURCES += bitmultiset.c bitmultiset.h
 libutil_la_SOURCES += chunk_support.c chunk_support.h
-libutil_la_SOURCES += chunk_table_factory.c
+libutil_la_SOURCES += chunk_table_factory.c chunk_table_factory.h
 libutil_la_SOURCES += dfs-stack.c dfs-stack.h
 libutil_la_SOURCES += dynamic-array.c dynamic-array.h
 libutil_la_SOURCES += fast_hash.c fast_hash.h

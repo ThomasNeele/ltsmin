@@ -7,6 +7,7 @@
 
 #include <pins2lts-mc/algorithm/algorithm.h>
 #include <pins2lts-mc/parallel/color.h>
+#include <pins-lib/pins2pins-ltl.h>
 #include <util-lib/fast_set.h>
 
 extern struct poptOption ndfs_options[];
@@ -24,7 +25,8 @@ typedef union trace_info_u {
     char                data[16];
 } trace_info_t;
 
-extern void find_and_write_dfs_stack_trace (model_t model, dfs_stack_t stack);
+extern void find_and_write_dfs_stack_trace (model_t model, dfs_stack_t stack,
+                                            bool is_lasso);
 
 extern void ndfs_report_cycle (run_t *run, model_t model, dfs_stack_t stack,
                                state_info_t *cycle_closing_state);
@@ -33,7 +35,9 @@ static inline bool
 ecd_has_state (fset_t *table, state_info_t *s)
 {
     hash32_t            hash = ref_hash (s->ref);
-    return fset_find (table, &hash, &s->ref, NULL, false);
+    int seen = fset_find (table, &hash, &s->ref, NULL, false);
+    HREassert (seen != FSET_FULL);
+    return seen;
 }
 
 static inline uint32_t

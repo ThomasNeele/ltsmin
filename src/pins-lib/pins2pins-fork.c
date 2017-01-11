@@ -1,12 +1,15 @@
 #include <hre/config.h>
 
-#include <stdlib.h>
-
-#include <pins-lib/pins.h>
 #include <pthread.h> // for pthread_key thread-specific variables
+#include <stdlib.h>
+#include <sys/socket.h> // for AF_UNIX etc
+
 #include <hre-io/user.h> // for streaming
 #include <ltsmin-lib/ltsmin-standard.h> // for LTSMIN_EXIT_FAILURE
-#include <sys/socket.h> // for AF_UNIX etc
+#include <pins-lib/pins.h>
+#include <pins-lib/pins2pins-fork.h>
+
+int PINS_REQUIRE_FORK_WRAPPER = 0;
 
 /**
  * Wraps a PINS interface in a separate process, communicating over UNIX socket
@@ -19,8 +22,10 @@ struct fork_context
     int n_groups; // number of transition groups
     int n_state_labels; // number of state labels
     int state_length; // length of state vector
-    int *r_lengths; // for 'short' src (in get_next and get_actions)
-    int *w_lengths; // for 'short' dst/cpy (in get_next and get_actions)
+    int *s_lengths; // for 'short' (int get_next and_get_actions)
+    int *r_lengths; // for 'short' src (in get_next_r2w)
+    int *a_lengths; // for 'short' src (in get_actions_r2w)
+    int *w_lengths; // for 'short' dst/cpy (in get_next_r2w and get_actions_r2w)
     int *l_lengths; // for 'short' state (in get_state_label)
 };
 
@@ -39,16 +44,18 @@ struct thread_info
 enum FORK_CALL {
     EXIT = 0,
     NEXT_SHORT,
+    NEXT_SHORT_R2W,
     NEXT_LONG,
     NEXT_ALL,
     NEXT_MATCHING,
     ACTIONS_SHORT,
+    ACTIONS_SHORT_R2W,
     ACTIONS_LONG,
     LABELS_SHORT,
     LABELS_LONG,
     LABELS_GROUP,
     LABELS_ALL,
-    TRANSITION_IN_GROUP,
+    GROUPS_OF_EDGE,
     COVERED_BY,
     COVERED_BY_SHORT,
 };
@@ -65,14 +72,17 @@ enum FORK_REPLY {
 
 // Callback function for get-next and get-actions
 static void
-slave_transition_cb(void* context, transition_info_t* ti, int* dst, int* cpy, int is_short)
+slave_transition_cb(void* context, transition_info_t* ti, int* dst, int* cpy, enum FORK_CALL type)
 {
     struct thread_info *t_info = (struct thread_info *)context;
     stream_t os = t_info->child_socket_os;
     model_t model = t_info->model;
 
     // determine length of dst and cpy
-    int length = is_short ? t_info->fc->w_lengths[ti->group] : t_info->fc->state_length;
+    int length = -1;
+    if (type == NEXT_SHORT) length = t_info->fc->s_lengths[ti->group];
+    else if (type == NEXT_LONG) length = t_info->fc->state_length;
+    else if (type == NEXT_SHORT_R2W) length = t_info->fc->w_lengths[ti->group];
 
     // send REPLY
     DSwriteS32(os, REPLY);
@@ -95,13 +105,19 @@ slave_transition_cb(void* context, transition_info_t* ti, int* dst, int* cpy, in
 static void
 slave_transition_cb_short(void* context, transition_info_t* ti, int* dst, int* cpy)
 {
-    slave_transition_cb(context, ti, dst, cpy, 1);
+    slave_transition_cb(context, ti, dst, cpy, NEXT_SHORT);
+}
+
+static void
+slave_transition_cb_short_r2w(void* context, transition_info_t* ti, int* dst, int* cpy)
+{
+    slave_transition_cb(context, ti, dst, cpy, NEXT_SHORT_R2W);
 }
 
 static void
 slave_transition_cb_long(void* context, transition_info_t* ti, int* dst, int* cpy)
 {
-    slave_transition_cb(context, ti, dst, cpy, 0);
+    slave_transition_cb(context, ti, dst, cpy, NEXT_LONG);
 }
 
 // Implementation of "wait for commands" loop
@@ -118,11 +134,23 @@ child_process(struct thread_info *ti)
             // read transition group
             int group = DSreadS32(is);
             // read src state
-            int length = ti->fc->r_lengths[group];
+            int length = ti->fc->s_lengths[group];
             int src[length];
             for (int i=0; i < length; i++) src[i] = DSreadS32(is);
             // call parent model
             int res = GBgetTransitionsShort(parent_model, group, src, slave_transition_cb_short, ti);
+            // signal that all successor states have been sent
+            DSwriteS32(os, DONE);
+            DSwriteS32(os, res);
+            stream_flush(os);
+        } else if (next == NEXT_SHORT_R2W) {
+            // read transition group
+            int group = DSreadS32(is);
+            // read src state
+            int length = ti->fc->r_lengths[group];
+            int src[length];
+            // call parent model
+            int res = GBgetTransitionsShortR2W(parent_model, group, src, slave_transition_cb_short_r2w, ti);
             // signal that all successor states have been sent
             DSwriteS32(os, DONE);
             DSwriteS32(os, res);
@@ -170,11 +198,24 @@ child_process(struct thread_info *ti)
             // read transition group
             int group = DSreadS32(is);
             // read src state
-            int length = ti->fc->r_lengths[group];
+            int length = ti->fc->s_lengths[group];
             int src[length];
             for (int i=0; i < length; i++) src[i] = DSreadS32(is);
             // call parent model
             int res = GBgetActionsShort(parent_model, group, src, slave_transition_cb_short, ti);
+            // signal that all successor states have been sent
+            DSwriteS32(os, DONE);
+            DSwriteS32(os, res);
+            stream_flush(os);
+        } else if (next == ACTIONS_SHORT_R2W) {
+            // read transition group
+            int group = DSreadS32(is);
+            // read src state
+            int length = ti->fc->a_lengths[group];
+            int src[length];
+            for (int i=0; i < length; i++) src[i] = DSreadS32(is);
+            // call parent model
+            int res = GBgetActionsShortR2W(parent_model, group, src, slave_transition_cb_short_r2w, ti);
             // signal that all successor states have been sent
             DSwriteS32(os, DONE);
             DSwriteS32(os, res);
@@ -242,6 +283,19 @@ child_process(struct thread_info *ti)
             // signal the result of the label evaluation
             for (int i=0; i<n_labels; i++) DSwriteS32(os, labels[i]);
             stream_flush(os);
+        } else if (next == GROUPS_OF_EDGE) {
+            int edgeno = DSreadS32(is);
+            int index = DSreadS32(is);
+            int* groups = NULL;
+            const int n = GBgroupsOfEdge(parent_model, edgeno, index, &groups);
+            DSwriteS32(os, n);
+            if (n > 0) {
+                for (int i = 0; i < n; i++) {
+                    DSwriteS32(os, groups[i]);
+                }
+                RTfree(groups);
+            }
+            stream_flush(os);
         } else if (next == EXIT) {
             break;
         } else {
@@ -264,6 +318,7 @@ get_or_fork(struct fork_context *ctx, model_t model)
 {
     struct thread_info *ti = pthread_getspecific(ctx->key);
     if (ti == NULL) {
+        Warning(info, "Forking...");
         ti = HREmalloc(NULL, sizeof(struct thread_info));
         pthread_setspecific(ctx->key, ti);
 
@@ -300,8 +355,30 @@ forked_next(model_t model, int param1, int param2, int* src, TransitionCB cb, vo
     stream_t is = ti->parent_socket_is;
     stream_t os = ti->parent_socket_os;
 
-    int r_length = (type == NEXT_SHORT || type == ACTIONS_SHORT) ? fc->r_lengths[param1] : fc->state_length;
-    int w_length = (type == NEXT_SHORT || type == ACTIONS_SHORT) ? fc->w_lengths[param1] : fc->state_length;
+    int r_length; int w_length;
+    switch (type) {
+        case NEXT_SHORT:
+        case ACTIONS_SHORT:
+            r_length = fc->s_lengths[param1];
+            w_length = fc->s_lengths[param1];
+        break;
+        case NEXT_SHORT_R2W:
+            r_length = fc->r_lengths[param1];
+            w_length = fc->w_lengths[param1];
+            break;
+        case NEXT_LONG:
+        case ACTIONS_LONG:
+            r_length = fc->state_length;
+            w_length = fc->state_length;
+            break;
+        case ACTIONS_SHORT_R2W:
+            r_length = fc->a_lengths[param1];
+            w_length = fc->w_lengths[param1];
+            break;
+        default:
+            Abort("Unknown type");
+    }
+
     int labels = lts_type_get_edge_label_count(GBgetLTStype(model));
     int res;
 
@@ -357,6 +434,12 @@ forked_next_short(model_t model, int group, int* src, TransitionCB cb, void* con
 }
 
 static int
+forked_next_short_r2w(model_t model, int group, int* src, TransitionCB cb, void* context)
+{
+    return forked_next(model, group, 0, src, cb, context, NEXT_SHORT_R2W);
+}
+
+static int
 forked_next_long(model_t model, int group, int* src, TransitionCB cb, void* context)
 {
     return forked_next(model, group, 0, src, cb, context, NEXT_LONG);
@@ -378,6 +461,12 @@ static int
 forked_actions_short(model_t model, int group, int* src, TransitionCB cb, void* context)
 {
     return forked_next(model, group, 0, src, cb, context, ACTIONS_SHORT);
+}
+
+static int
+forked_actions_short_r2w(model_t model, int group, int* src, TransitionCB cb, void* context)
+{
+    return forked_next(model, group, 0, src, cb, context, ACTIONS_SHORT_R2W);
 }
 
 static int
@@ -458,21 +547,28 @@ forked_state_labels_group(model_t model, sl_group_enum_t group, int *state, int 
 }
 
 static int
-forked_transition_in_group(model_t model, int *labels, int group)
+forked_groups_of_edge(model_t model, int edgeno, int index, int** groups)
 {
     struct fork_context *fc = (struct fork_context*)GBgetContext(model);
     struct thread_info *ti = get_or_fork(fc, model);
     stream_t is = ti->parent_socket_is;
     stream_t os = ti->parent_socket_os;
 
-    // send command, labels and group
-    DSwriteS32(os, TRANSITION_IN_GROUP);
-    for (int i=0; i<fc->n_state_labels; i++) DSwriteS32(os, labels[i]);
-    DSwriteS32(os, group);
+    // send command, edgeno and index
+    DSwriteS32(os, GROUPS_OF_EDGE);
+    DSwriteS32(os, edgeno);
+    DSwriteS32(os, index);
     stream_flush(os);
 
-    // read result
-    return DSreadS32(is);
+    const int n = DSreadS32(is);
+    if (n == 0) return 0;
+
+    *groups = (int*) RTmalloc(sizeof(int) * n);
+
+    // read group numbers
+    for (int i = 0; i < n; i++) (*groups)[i] = DSreadS32(is);
+
+    return n;
 }
 
 
@@ -484,6 +580,8 @@ model_t
 GBaddFork(model_t parent_model)
 {
     HREassert(parent_model != NULL, "No model");
+
+    if (!PINS_REQUIRE_FORK_WRAPPER) return parent_model;
 
     /* create new model */
     model_t forked_model = GBcreateBase();
@@ -499,11 +597,15 @@ GBaddFork(model_t parent_model)
     ctx->state_length = lts_type_get_state_length(GBgetLTStype(parent_model));
     ctx->n_groups = dm_nrows(GBgetDMInfo(parent_model));
     ctx->n_state_labels = dm_nrows(GBgetStateLabelInfo(parent_model));
+    ctx->s_lengths = (int*)HREmalloc(NULL, sizeof(int)*ctx->n_groups);
     ctx->r_lengths = (int*)HREmalloc(NULL, sizeof(int)*ctx->n_groups);
+    ctx->a_lengths = (int*)HREmalloc(NULL, sizeof(int)*ctx->n_groups);
     ctx->w_lengths = (int*)HREmalloc(NULL, sizeof(int)*ctx->n_groups);
     ctx->l_lengths = (int*)HREmalloc(NULL, sizeof(int)*ctx->n_state_labels);
-    for (int i=0; i<ctx->n_groups; i++) ctx->r_lengths[i] = dm_ones_in_row(GBgetExpandMatrix(parent_model), i);
-    for (int i=0; i<ctx->n_groups; i++) ctx->w_lengths[i] = dm_ones_in_row(GBgetProjectMatrix(parent_model), i);
+    for (int i=0; i<ctx->n_groups; i++) ctx->s_lengths[i] = dm_ones_in_row(GBgetDMInfo(parent_model), i);
+    for (int i=0; i<ctx->n_groups; i++) ctx->r_lengths[i] = dm_ones_in_row(GBgetDMInfoRead(parent_model), i);
+    for (int i=0; i<ctx->n_groups; i++) ctx->a_lengths[i] = dm_ones_in_row(GBgetMatrix(parent_model, GBgetMatrixID(parent_model, LTSMIN_MATRIX_ACTIONS_READS)), i);
+    for (int i=0; i<ctx->n_groups; i++) ctx->w_lengths[i] = dm_ones_in_row(GBgetDMInfoMayWrite(parent_model), i);
     for (int i=0; i<ctx->n_state_labels; i++) ctx->l_lengths[i] = dm_ones_in_row(GBgetStateLabelInfo(parent_model), i);
 
     /* set context to struct */
@@ -511,16 +613,18 @@ GBaddFork(model_t parent_model)
 
     /* set overloaded functions */
     GBsetNextStateShort(forked_model, forked_next_short);
+    GBsetNextStateShortR2W(forked_model, forked_next_short_r2w);
     GBsetNextStateLong(forked_model, forked_next_long);
     GBsetNextStateAll(forked_model, forked_next_all);
     GBsetNextStateMatching(forked_model, forked_next_matching);
     GBsetActionsShort(forked_model, forked_actions_short);
+    GBsetActionsShort(forked_model, forked_actions_short_r2w);
     GBsetActionsLong(forked_model, forked_actions_long);
     GBsetStateLabelShort(forked_model, forked_state_labels_short);
     GBsetStateLabelLong(forked_model, forked_state_labels_long);
     GBsetStateLabelsGroup(forked_model, forked_state_labels_group);
     GBsetStateLabelsAll(forked_model, forked_state_labels_all);
-    GBsetTransitionInGroup(forked_model, forked_transition_in_group);
+    GBsetGroupsOfEdge(forked_model, forked_groups_of_edge);
     // GBsetIsCoveredBy
     // GBsetIsCoveredByShort
 

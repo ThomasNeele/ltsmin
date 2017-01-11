@@ -19,7 +19,9 @@
 #include <ltsmin-lib/ltsmin-standard.h>
 #include <pins-lib/pins.h>
 #include <pins-lib/pins-impl.h>
+#include <pins-lib/pins-util.h>
 #include <pins-lib/property-semantics.h>
+#include <pins-lib/por/pins2pins-por.h>
 #include <util-lib/dynamic-array.h>
 #include <util-lib/fast_hash.h>
 #include <util-lib/treedbs.h>
@@ -119,7 +121,7 @@ static inline void
 deadlock_detect (struct dist_thread_context *ctx, int *state, int count)
 {
     if (count != 0) return;
-    if (GBstateIsValidEnd(ctx->model, state)) return;
+    if (pins_state_is_valid_end(ctx->model, state)) return;
     ctx->deadlocks++;
     if (!dlk_detect) return;
     ctx->violations++;
@@ -138,7 +140,7 @@ deadlock_detect (struct dist_thread_context *ctx, int *state, int count)
 static inline void
 invariant_detect (struct dist_thread_context *ctx, int *state)
 {
-    if ( !inv_expr || eval_predicate(ctx->model, inv_expr, NULL, state, size, ctx->env) ) return;
+    if ( !inv_expr || eval_state_predicate(ctx->model, inv_expr, state, ctx->env) ) return;
     ctx->violations++;
     if (trc_output!=NULL){
         uint32_t ofs=TreeFold(ctx->dbs,(int32_t*)(state));
@@ -590,19 +592,14 @@ int main(int argc, char*argv[]){
     ctx.tcount=(int*)RTmalloc(mpi_nodes*sizeof(int));
     memset(ctx.tcount,0,mpi_nodes*sizeof(int));
 
-    model_t model=GBcreateBase();
+    model_t model = GBcreateBase();
     ctx.model = model;
-    GBsetChunkMethods(model,HREgreyboxNewmap,HREglobal(),
-                      HREgreyboxI2C,
-                      HREgreyboxC2I,
-                      HREgreyboxCAtI,
-                      HREgreyboxCount);
+    GBsetChunkMap (model, HREgreyboxTableFactory());
 
     if (ctx.mpi_me == 0)
         GBloadFileShared(model,files[0]);
     HREbarrier(HREglobal());
-    GBloadFile(model,files[0]);
-    model = GBwrapModel(model);
+    GBloadFile(model,files[0],&model);
 
     HREbarrier(HREglobal());
     Warning(info,"model created");
@@ -714,7 +711,7 @@ int main(int argc, char*argv[]){
         for(int i=0;i<T;i++){
             int typeno=lts_type_find_type(ltstype,lts_type_get_type(trace_type,i));
             if (typeno<0) continue;
-            void *table=GBgetChunkMap(model,typeno);
+            value_table_t table = GBgetChunkMap (model, typeno);
             Debug("address of table %d/%d: %p",i,typeno,table);
             lts_file_set_table(ctx.trace,i,table);
         }
@@ -728,13 +725,13 @@ int main(int argc, char*argv[]){
             Abort("No edge label '%s...' for action detection", LTSMIN_EDGE_TYPE_ACTION_PREFIX);
         int typeno = lts_type_get_edge_label_typeno(ltstype, act_label);
         chunk c = chunk_str(act_detect);
-        act_index = GBchunkPut(model, typeno, c);
+        act_index = pins_chunk_put (model, typeno, c);
         Warning(info, "Detecting action \"%s\"", act_detect);
     }
     if (inv_detect) {
         if (PINS_POR) Abort ("Distributed tool implements no cycle provisos.");
         ltsmin_parse_env_t env = LTSminParseEnvCreate();
-        inv_expr = parse_file_env (inv_detect, pred_parse_file, model, env);
+        inv_expr = pred_parse_file (inv_detect, env, ltstype);
         ctx.env = env;
     }
     HREbarrier(HREglobal());
@@ -984,5 +981,8 @@ int main(int argc, char*argv[]){
         lts_file_close(ctx.trace);
     }
     HREbarrier(HREglobal());
+
+    GBExit(model);
+
     HREexit(LTSMIN_EXIT_SUCCESS);
 }

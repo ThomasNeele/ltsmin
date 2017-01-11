@@ -1,7 +1,9 @@
 #include <hre/config.h>
+
 #include <stdlib.h>
 
 #include <hre/user.h>
+#include <mc-lib/atomics.h>
 #include <vset-lib/vdom_object.h>
 
 #ifdef HAVE_ATERM2_H
@@ -35,6 +37,8 @@ extern vdom_t vdom_create_lddmc_from_file(FILE *f);
 
 vset_implementation_t vset_default_domain = VSET_IMPL_AUTOSELECT;
 
+int vset_cache_diff = 0;
+
 static void vset_popt(poptContext con,
  		enum poptCallbackReason reason,
                             const struct poptOption * opt,
@@ -54,6 +58,7 @@ static void vset_popt(poptContext con,
 			vset_default_domain=res;
 			return;
 		}
+		if (!strcmp(opt->longName,"vset-cache-diff")) return;
 		Abort("unexpected call to vset_popt");
 	}
 }
@@ -84,7 +89,7 @@ struct poptOption vset_options[]={
       "select a vector set implementation from native ListDD (32-bit or 64-bit),"
       " ATermDD with *list* encoding,"
       " ATermDD with *tree* encoding, BuDDy using the *fdd* feature,"
-      " DDD, Sylvan, or multicore ListDD (default: first available)" , "<ldd64|ldd|list|tree|fdd|ddd|sylvan|lddmc>" },
+      " DDD, Sylvan BDDs, or Sylvan LDDs (default: first available)" , "<ldd64|ldd|list|tree|fdd|ddd|sylvan|lddmc>" },
     { NULL,0 , POPT_ARG_INCLUDE_TABLE , listdd_options , 0 , "ListDD options" , NULL},
     { NULL,0 , POPT_ARG_INCLUDE_TABLE , listdd64_options , 0 , "ListDD64 options" , NULL},
 #ifdef HAVE_ATERM2_H
@@ -95,6 +100,8 @@ struct poptOption vset_options[]={
 	{ NULL,0 , POPT_ARG_INCLUDE_TABLE , sylvan_options , 0 , "Sylvan options" , NULL},
 	{ NULL,0 , POPT_ARG_INCLUDE_TABLE , lddmc_options , 0 , "LDDmc options" , NULL},
 #endif // HAVE_SYLVAN
+    { "vset-cache-diff", 0, POPT_ARG_INT|POPT_ARGFLAG_SHOW_DEFAULT, &vset_cache_diff , 0 ,
+      "Influences size of operations cache when counting precisely with bignums: cache size = (2log('nodes-to-count') + <diff>)^2", "<diff>"},
     POPT_TABLEEND
 };
 
@@ -106,6 +113,7 @@ vdom_create_domain(int n, vset_implementation_t impl)
     switch(impl){
     case VSET_IMPL_AUTOSELECT:
         /* fall-through */
+    case VSET_LDDmc: return vdom_create_lddmc(n);
     case VSET_ListDD64: return vdom_create_list64_native(n);
     case VSET_ListDD: return vdom_create_list_native(n);
 #ifdef HAVE_ATERM2_H
@@ -116,10 +124,7 @@ vdom_create_domain(int n, vset_implementation_t impl)
 #ifdef HAVE_DDD_H
     case VSET_DDD: return vdom_create_ddd(n);
 #endif
-#ifdef HAVE_SYLVAN
     case VSET_Sylvan: return vdom_create_sylvan(n);
-    case VSET_LDDmc: return vdom_create_lddmc(n);
-#endif // HAVE_SYLVAN
     default: return NULL;
     }
 }
@@ -237,6 +242,19 @@ default_rel_update(vrel_t rel, vset_t set, vrel_update_cb cb, void *context)
     vset_enum(set, default_rel_update_cb, &ctx);
 }
 
+static void
+default_set_next_union(vset_t dst,vset_t src,vrel_t rel,vset_t uni)
+{
+    vset_next(dst,src,rel);
+    vset_union(dst,uni);
+}
+
+static void
+default_set_visit_par(vset_t set, vset_visit_callbacks_t* cbs, size_t ctx_size, void* context, int cache_op)
+{
+    vset_visit_seq(set, cbs, ctx_size, context, cache_op);
+}
+
 void vdom_init_shared(vdom_t dom,int n)
 {
     memset(&dom->shared, 0, sizeof(dom->shared));
@@ -245,10 +263,14 @@ void vdom_init_shared(vdom_t dom,int n)
 	dom->shared.set_example_match=default_set_example_match;
 	dom->shared.set_zip=default_zip;
     dom->shared.rel_update=default_rel_update;
+    dom->shared.rel_update_seq=default_rel_update;  // is actually sequential
     dom->shared.set_update=default_set_update;
+    dom->shared.set_update_seq=default_set_update;  // is actually sequential
 	dom->shared.reorder=default_reorder;
 	dom->shared.set_least_fixpoint=default_least_fixpoint;
     dom->shared.set_project_minus=default_set_project_minus;
+    dom->shared.set_next_union=default_set_next_union;
+    dom->shared.set_visit_par=default_set_visit_par;
     dom->shared.names = RTmalloc(n * sizeof(char*));
     for (int i = 0; i < n; i++) dom->shared.names[i] = NULL;
 }
@@ -266,11 +288,6 @@ char* vdom_get_name(vdom_t dom, int i) {
 int vdom_separates_rw(vdom_t dom) {
     if (dom->shared.separates_rw == NULL) return 0;
     return dom->shared.separates_rw();
-}
-
-int vdom_supports_cpy(vdom_t dom) {
-    if (dom->shared.supports_cpy == NULL) return 0;
-    return dom->shared.supports_cpy();
 }
 
 vset_t vset_create(vdom_t dom,int k,int* proj){
@@ -408,11 +425,132 @@ void vset_example_match(vset_t set,int *e, int p_len, int* proj, int* match){
         set->dom->shared.set_example_match(set,e,p_len,proj,match);
 }
 
-void vset_count(vset_t set,long *nodes,bn_int_t *elements){
-	set->dom->shared.set_count(set,nodes,elements);
+void vset_count(vset_t set,long *nodes,double *elements){
+	return set->dom->shared.set_count(set,nodes,elements);
 }
 
-void vrel_count(vrel_t rel,long *nodes,bn_int_t *elements){
+typedef struct count_info_global {
+    bn_int_t* bignums;
+    long* num_free;
+    bn_int_t* bignum_false;
+    bn_int_t* bignum_true;
+} count_info_global_t;
+
+typedef struct count_info {
+    bn_int_t bignum;
+    struct count_info* down;
+    struct count_info* right;
+    count_info_global_t* global;
+} count_info_t;
+
+static void
+count_precise_pre(int terminal, int val, int cached, void* result, void* context)
+{
+    (void) val;
+    count_info_t* ctx = (count_info_t*) context;
+
+    if(terminal) {
+        if (val) bn_init_copy(&ctx->bignum, ctx->global->bignum_true);
+        else bn_init_copy(&ctx->bignum, ctx->global->bignum_false);
+    } else if(cached) {
+        bn_init_copy(&ctx->bignum, (bn_int_t*) result);
+    }
+}
+
+void count_precise_init(void* context, void* parent, int succ) {
+    count_info_t* ctx = (count_info_t*) context;
+    count_info_t* p = (count_info_t*) parent;
+    ctx->global = p->global;
+
+    if (succ) p->down = ctx;
+    else p->right = ctx;
+}
+
+void count_precise_post(int val, void* context, int* cache, void** result) {
+    (void) val;
+    count_info_t* ctx = (count_info_t*) context;
+
+    bn_init(&ctx->bignum);
+    bn_add(&ctx->down->bignum, &ctx->right->bignum, &ctx->bignum);
+    bn_clear(&ctx->down->bignum);
+    bn_clear(&ctx->right->bignum);
+
+    const long f = *ctx->global->num_free;
+
+    if (f > 0) {
+        *cache = 1;
+        *result = ctx->global->bignums + f - 1;
+    }
+}
+
+void count_cache_success(void* context, void* result) {
+    count_info_t* ctx = (count_info_t*) context;
+    bn_init_copy((bn_int_t*) result, &ctx->bignum);
+    (*ctx->global->num_free)--;
+}
+
+void vset_count_precise(vset_t set,long nodes,bn_int_t *elements){
+
+    long cache_size;
+    if (_cache_diff() <= 0) {
+        cache_size = nodes >> (_cache_diff() * -1);
+    } else {
+        int diff = 0;
+        do cache_size = nodes << (_cache_diff() - diff--);
+        while (cache_size < nodes);
+    }
+
+    count_info_t context;
+    count_info_global_t glob;
+    context.global = &glob;
+    glob.bignums = RTmalloc(sizeof(bn_int_t) * cache_size);
+    Warning(infoLong, "Bignum cache has %zu entries", cache_size);
+    long num_free = cache_size;
+    glob.num_free = &num_free;
+
+    bn_int_t bignum_false;
+    bn_int_t bignum_true;
+
+    bn_init(&bignum_false);
+    bn_init(&bignum_true);
+    bn_set_digit(&bignum_true, 1);
+
+    glob.bignum_false = &bignum_false;
+    glob.bignum_true = &bignum_true;
+
+    vset_visit_callbacks_t cbs;
+    cbs.vset_visit_pre = count_precise_pre;
+    cbs.vset_visit_init_context = count_precise_init;
+    cbs.vset_visit_post = count_precise_post;
+    cbs.vset_visit_cache_success = count_cache_success;
+
+    const int cache_op = vdom_next_cache_op(set->dom);
+    vset_visit_seq(set, &cbs, sizeof(count_info_t), &context, cache_op);
+
+    for (long i = cache_size; i > num_free; i--) bn_clear(&glob.bignums[i - 1]);
+    RTfree(glob.bignums);
+    bn_clear(&bignum_false);
+    bn_clear(&bignum_true);
+
+    bn_init_copy(elements, &context.bignum);
+    bn_clear(&context.bignum);
+
+    vdom_clear_cache(set->dom, cache_op);
+}
+
+int vdom_supports_precise_counting(vdom_t dom) {
+    return dom->shared.set_visit_seq != NULL;
+}
+
+void vset_ccount(vset_t set,long *nodes,long double *elements) {
+    return set->dom->shared.set_ccount(set,nodes,elements);
+}
+
+int vdom_supports_ccount(vdom_t dom) {
+    return dom->shared.set_ccount!=NULL;
+}
+
+void vrel_count(vrel_t rel,long *nodes,double *elements){
 	rel->dom->shared.rel_count(rel,nodes,elements);
 }
 
@@ -436,6 +574,10 @@ void vset_next(vset_t dst,vset_t src,vrel_t rel){
 	dst->dom->shared.set_next(dst,src,rel);
 }
 
+void vset_next_union(vset_t dst,vset_t src,vrel_t rel,vset_t uni){
+    dst->dom->shared.set_next_union(dst,src,rel,uni);
+}
+
 void vset_prev(vset_t dst,vset_t src,vrel_t rel,vset_t univ){
 	dst->dom->shared.set_prev(dst,src,rel,univ);
 }
@@ -456,7 +598,18 @@ void vrel_add(vrel_t rel,const int* src, const int* dst){
 	rel->dom->shared.rel_add(rel,src,dst);
 }
 
+static void
+default_rel_add_cpy(vrel_t rel, const int* src, const int* dst, const int* cpy) {
+    rel->dom->shared.rel_add(rel, src, dst);
+    (void) cpy;
+}
+
 void vrel_add_cpy(vrel_t rel,const int* src, const int* dst, const int* cpy){
+    if (rel->dom->shared.rel_add_cpy == NULL) {
+        if (!vdom_separates_rw(rel->dom)) {
+            rel->dom->shared.rel_add_cpy = default_rel_add_cpy;
+        } else HREassert(false, "vset should implement vrel_add_cpy");
+    }
     rel->dom->shared.rel_add_cpy(rel,src,dst,cpy);
 }
 
@@ -479,7 +632,7 @@ void
 vrel_add_act(vrel_t rel,const int* src, const int* dst, const int* cpy, const int act)
 {
     if (rel->dom->shared.rel_add_act == NULL) {
-        if (vdom_supports_cpy(rel->dom)) {
+        if (vdom_separates_rw(rel->dom)) {
             Warning(info, "vrel_add_act not supported; falling back to vrel_add_cpy");
             rel->dom->shared.rel_add_act = default_rel_add_act_cpy;
         } else {
@@ -495,8 +648,16 @@ void vrel_update(vrel_t rel, vset_t set, vrel_update_cb cb, void *context) {
     rel->dom->shared.rel_update(rel, set, cb, context);
 }
 
+void vrel_update_seq(vrel_t rel, vset_t set, vrel_update_cb cb, void *context) {
+    rel->dom->shared.rel_update_seq(rel, set, cb, context);
+}
+
 void vset_update(vset_t dst, vset_t src, vset_update_cb cb, void *context) {
     dst->dom->shared.set_update(dst, src, cb, context);
+}
+
+void vset_update_seq(vset_t dst, vset_t src, vset_update_cb cb, void *context) {
+    dst->dom->shared.set_update_seq(dst, src, cb, context);
 }
 
 void vset_reorder(vdom_t dom) {
@@ -578,4 +739,43 @@ int
 vdom_vector_size(vdom_t dom)
 {
     return dom->shared.size;
+}
+
+int
+_cache_diff()
+{
+    return vset_cache_diff;
+}
+
+void
+vset_visit_par(vset_t set, vset_visit_callbacks_t* cbs, size_t ctx_size, void* context, int cache_op)
+{
+    if (set->dom->shared.set_visit_par == NULL) {
+        Abort("Vector set implementation does not support visiting nodes in parallel")
+    }
+    set->dom->shared.set_visit_par(set, cbs, ctx_size, context, cache_op);
+}
+
+void
+vset_visit_seq(vset_t set, vset_visit_callbacks_t* cbs, size_t ctx_size, void* context, int cache_op)
+{
+    if (set->dom->shared.set_visit_seq == NULL) {
+        Abort("Vector set implementation does not support visiting nodes")
+    }
+    set->dom->shared.set_visit_seq(set, cbs, ctx_size, context, cache_op);
+}
+
+int vdom_next_cache_op(vdom_t dom) {
+
+    if (dom->shared.dom_next_cache_op == NULL) {
+        Abort("Vector set implementation does not support user cache operations");
+    }
+
+    return dom->shared.dom_next_cache_op(dom);
+}
+
+void vdom_clear_cache(vdom_t dom, const int cache_op) {
+    if (dom->shared.dom_clear_cache != NULL) {
+        dom->shared.dom_clear_cache(dom, cache_op);
+    }
 }

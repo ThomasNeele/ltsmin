@@ -67,7 +67,7 @@ static run_t              *run = NULL;
 static void
 exit_ltsmin (int sig)
 {
-    if (HREme(HREglobal()) == 0) {
+    if (HREme(HREglobal()) == 0 && atomic_read(&run) != NULL) {
         if ( run_stop(run) ) {
             Warning (info, "PREMATURE EXIT (caught signal: %d)", sig);
         } else {
@@ -111,14 +111,12 @@ create_pins_model ()
 {
     model_t             model = GBcreateBase ();
 
-    cct_cont_t         *cont = cct_create_cont (global->tables);
-    GBsetChunkMethods (model, (newmap_t)cct_create_vt, cont, HREgreyboxI2C,
-                       HREgreyboxC2I, HREgreyboxCAtI, HREgreyboxCount);
+    table_factory_t     factory = cct_create_table_factory  (global->tables);
+    GBsetChunkMap (model, factory); //HREgreyboxTableFactory());
 
     Print1 (info, "Loading model from %s", files[0]);
 
-    GBloadFile (model, files[0]);
-    model = GBwrapModel(model);
+    GBloadFile (model, files[0], &model);
 
     return model;
 }
@@ -207,9 +205,15 @@ main (int argc, char *argv[])
 
     run_alg (ctx);
 
+    int                 exit_code = global->exit_status;
+
     reduce_and_print (ctx);
 
+    atomic_write (&run, NULL);
     deinit_all (ctx);
 
-    HREexit (global->exit_status);
+    GBExit (model);
+
+    HREbarrier (HREglobal());
+    HREexit (exit_code);
 }

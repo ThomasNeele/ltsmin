@@ -1,5 +1,5 @@
 AC_PREREQ(2.60)
-AC_INIT([ltsmin],[2.1],[ltsmin-support@lists.utwente.nl])
+AC_INIT([ltsmin],[3.0],[ltsmin-support@lists.utwente.nl])
 AC_CONFIG_MACRO_DIR([m4])
 AC_CONFIG_AUX_DIR([autotools])
 AM_INIT_AUTOMAKE([foreign subdir-objects])
@@ -87,6 +87,8 @@ AC_PROG_INSTALL
 AC_LANG_SAVE
 AC_LANG_C
 AC_RUN_IFELSE([AC_LANG_SOURCE([[
+#include <stdlib.h>
+#include <stdio.h>
 #include <sys/types.h>
 #include <pthread.h>
 int main()
@@ -106,18 +108,27 @@ int main()
     exit(0);
 }
 ]])], [POSIX_SHARED=yes], [POSIX_SHARED=no
-    AC_MSG_WARN([No POSIX support found.])])
+    AC_MSG_FAILURE([No POSIX support found.])])
 AC_LANG_RESTORE
+
+PKG_PROG_PKG_CONFIG
+m4_pattern_forbid([^PKG_[A-Z_]+$], [missing some pkg-config macros (pkg-config package)])
 
 dnl Checks for programs.
 ACX_SPINS([:], [AC_MSG_WARN([SpinS will not be compiled.])])
 
+AC_ARG_ENABLE([dist],
+              [AS_HELP_STRING([--disable-dist],
+               [do not build distributed tools, that require MPI])],,
+              enable_dist=yes)
+AS_IF([test x"$enable_dist" = "xyes"],[
 AC_LANG_PUSH([C])
 AX_MPI([have_mpi=yes],[AC_MSG_WARN([unable to find working MPI C complier wrapper])])
 AC_LANG_POP([C])
 AC_LANG_PUSH([C++])
 AX_MPI([have_mpi=yes],[AC_MSG_WARN([unable to find working MPI C++ complier wrapper])])
 AC_LANG_POP([C++])
+])
 
 AC_PROG_CC_C99
 AS_IF([test x"$ac_cv_prog_cc_c99" = xno],
@@ -207,6 +218,9 @@ AC_SUBST([BUDDY_LDFLAGS])
 
 ACX_DDD([:],
   [AC_MSG_WARN([No libDDD installation found.])])
+
+ACX_SPOT([:],
+  [AC_MSG_WARN([No Spot installation found.])])
 
 ACX_CLINE_DEF([], [])
 
@@ -333,7 +347,7 @@ AX_CHECK_FUNC_INCLUDE([],[__sync_synchronize],
   [__sync_synchronize()],
   [],[acx_atomics=no])
 if test x"$acx_atomics" != "xyes"; then
-  AC_MSG_WARN([no acceptable atomic operations found.])
+  AC_MSG_FAILURE([no acceptable atomic operations found.])
 fi
 
 have_opaal="yes"
@@ -365,38 +379,56 @@ AC_SUBST([SYLVAN_LIBS],['${top_builddir}/sylvan/src/libsylvan.la'])
 AC_SUBST([SYLVAN_CPPFLAGS],['-I${top_srcdir}/sylvan/src'])
 AC_SUBST([SYLVAN_LDFLAGS])
 
-AC_CHECK_PROGS(OPAAL_LTSMIN, [opaal_ltsmin])
+AC_CHECK_PROGS(OPAAL_LTSMIN,[opaal_ltsmin])
 
 AC_ARG_WITH([scoop],[AS_HELP_STRING([--with-scoop],[Compile scoop])],[],[
     AC_CHECK_PROG(GHC, ghc, ghc)
     AC_CHECK_PROG(HAPPY, happy, happy)
-    AC_CHECK_PROG(GHCPKG, ghc-pkg, ghcpkg)
-    if test -z "$GHC" -o -z "$HAPPY" -o -z "$GHCPKG" ; then    
+    if test -z "$GHC" -o -z "$HAPPY"; then    
         [with_scoop=no]
     else
-        # the following madness is necessary because the containers package on Ubuntu
-        # installed with ghc-pkg seems incorrectly linked:
-        # https://stackoverflow.com/questions/27291531/haskell-linking-with-dynamic-libraries-on-ubuntu
-        # Note: it might after all be a better idea to find out whether the mapa2lts-* tools can be linked with GHC itself.
-        # But this may prove difficult where the mpi linker is used, e.g. in the mapa2lts-dist tool.
-        set -o pipefail
-        GHC_DEEPSEQ=`ghc-pkg field deepseq library-dirs 2> /dev/null | sed -n -e 's/^.* //p' | sed ':a;N;$!ba;s/\n/ -Wl,-rpath,/g'`
-        if test -z "$GHC_DEEPSEQ" ; then
-            AC_MSG_WARN([GHC package deepseq not found])
-            [with_scoop=no]
-    	else
-            AC_MSG_NOTICE([GHC package deepseq found])    	    
-            AC_SUBST(SCOOP_LDFLAGS, ["-Wl,-rpath,$GHC_DEEPSEQ"])
-            [with_scoop=yes]
-       	fi
+        [with_scoop=yes]
     fi
 ])
+
 if test "x$with_scoop" == xyes; then
     AC_CONFIG_SUBDIRS([scoop])
     [have_scoop="yes"]
 fi
 
-AM_CONDITIONAL([HAVE_POSIX], [test x"$POSIX_SHARED" = "xyes"])
+AX_BOOST_BASE([1.46],[have_boost="yes"],)
+AX_PATH_VIENNACL(1.5.1, no)
+if (test x$HAVE_VIENNACL = x1); then
+    have_viennacl="yes"
+else
+    AC_MSG_WARN([no acceptable ViennaCL installation found.])
+fi
+
+PKG_CHECK_MODULES([XML], [libxml-2.0], [have_xml2=yes],[
+    AC_MSG_WARN(libxml2 is not installed. Not building PNML front-end)
+])
+
+AC_ARG_ENABLE([prob],[AS_HELP_STRING([--enable-prob],[Compile ProB front-end])],[],[with_prob=yes])
+AS_IF([test x"$with_prob" = "xyes"],[
+    PKG_CHECK_MODULES([CZMQ], [libczmq],[
+        acx_prob=yes
+        PROB_CFLAGS="$CZMQ_CFLAGS"
+        PROB_LDFLAGS="$CZMQ_LDFLAGS"
+        PROB_LIBS="$CZMQ_LIBS"
+        AC_SUBST(PROB_CFLAGS)
+        AC_SUBST(PROB_LDFLAGS)
+        AC_SUBST(PROB_LIBS)],
+        [AC_MSG_WARN(libczmq is not installed. Not building ProB front-end)
+    ])
+])
+
+AC_ARG_ENABLE([werror],
+    [AS_HELP_STRING([--enable-werror], [Use -Werror @<:@no@:>@])],
+    [:],
+    [enable_werror=no])
+AS_IF([test x"$enable_werror" = "xyes"], [AC_SUBST([AM_CFLAGS], [-Werror])])
+
+#AM_CONDITIONAL([HAVE_POSIX], [test x"$POSIX_SHARED" = "xyes"])
 AM_CONDITIONAL([HAVE_SCOOP], [test x"$have_scoop" = "xyes"])
 AM_CONDITIONAL([HAVE_SYLVAN], [test x"$have_sylvan" = "xyes"])
 AS_IF([test x"$have_sylvan" = "xyes"], [AC_DEFINE([HAVE_SYLVAN], [1], [Define if using sylvan.])])
@@ -419,16 +451,80 @@ AM_CONDITIONAL([HAVE_CADP], [test x"$acx_cadp" = xyes])
 AM_CONDITIONAL([HAVE_DVE], [true])    dnl can be built unconditionally
 AM_CONDITIONAL([HAVE_SPINS], [true])
 AM_CONDITIONAL([HAVE_SPINS_COMPILER], [test x"$acx_spins" = "xyes"])
-AM_CONDITIONAL([HAVE_ATOMICS], [test x"$acx_atomics" = xyes])
+#AM_CONDITIONAL([HAVE_ATOMICS], [test x"$acx_atomics" = xyes])
 AM_CONDITIONAL([HAVE_VERSION_CONTROL], [test -d "${srcdir}/.git"])
 AM_CONDITIONAL([HAVE_LIBZIP], [test x"$acx_libzip" = xyes])
 AM_CONDITIONAL([HAVE_PROFILER], [test x"$acx_profiler" = xyes])
+AM_CONDITIONAL([HAVE_BOOST], [test x"$have_boost" = xyes])
+AM_CONDITIONAL([HAVE_VIENNACL], [test x"$have_viennacl" = xyes])
+AM_CONDITIONAL([HAVE_PNML], [test x"$have_xml2" = xyes])
+AM_CONDITIONAL([HAVE_PROB], [test x"$acx_prob" = xyes])
+AM_CONDITIONAL([HAVE_SPOT], [test x"$acx_spot" = xyes])
+AS_IF([test x"$acx_spot" = "xyes"], [AC_DEFINE([HAVE_SPOT], [1], [Define if using Spot.])])
 
 AM_CONDITIONAL(BUILD_OS_IS_DARWIN,
 [case "${build_os}" in
   darwin*)  true ;;
   *)        false ;;
 esac])
+
+# all tests
+AC_ARG_ENABLE([test-all], [AS_HELP_STRING([--disable-test-all],
+               [do not run any tests (so specific tests can be enabled)])],, enable_test_all=yes)
+
+# unit tests
+AC_ARG_ENABLE([test-unit], [AS_HELP_STRING([--disable-test-unit],
+               [do not run the unit tests])],, enable_test_unit=$enable_test_all)
+AM_CONDITIONAL([TEST_UNIT], [test x"$enable_test_unit" = xyes])
+
+# front-ends
+AC_ARG_ENABLE([test-DVE], [AS_HELP_STRING([--disable-test-DVE],
+               [do not test the DVE front-end])],, enable_test_DVE=$enable_test_all)
+AM_CONDITIONAL([TEST_DVE], [test x"$enable_test_DVE" = xyes])
+AC_ARG_ENABLE([test-ETF], [AS_HELP_STRING([--disable-test-ETF],
+               [do not test the ETF front-end])],, enable_test_ETF=$enable_test_all)
+AM_CONDITIONAL([TEST_ETF], [test x"$enable_test_ETF" = xyes])
+AC_ARG_ENABLE([test-Promela], [AS_HELP_STRING([--disable-test-Promela],
+               [do not test the Promela front-end])],, enable_test_Promela=$enable_test_all)
+AM_CONDITIONAL([TEST_PROMELA], [test x"$enable_test_Promela" = xyes])
+AC_ARG_ENABLE([test-LPS], [AS_HELP_STRING([--disable-test-LPS],
+               [do not test the LPS front-end])],, enable_test_LPS=$enable_test_all)
+AM_CONDITIONAL([TEST_LPS], [test x"$enable_test_LPS" = xyes])
+AC_ARG_ENABLE([test-PBES], [AS_HELP_STRING([--disable-test-PBES],
+               [do not test the PBES front-end])],, enable_test_PBES=$enable_test_all)
+AM_CONDITIONAL([TEST_PBES], [test x"$enable_test_PBES" = xyes])
+AC_ARG_ENABLE([test-OPPAAL], [AS_HELP_STRING([--disable-test-OPPAAL],
+               [do not test the OPPAAL front-end])],, enable_test_OPPAAL=$enable_test_all)
+AM_CONDITIONAL([TEST_OPPAAL], [test x"$enable_test_OPPAAL" = xyes])
+AC_ARG_ENABLE([test-PNML], [AS_HELP_STRING([--disable-test-PNML],
+               [do not test the PNML front-end])],, enable_test_PNML=$enable_test_all)
+AM_CONDITIONAL([TEST_PNML], [test x"$enable_test_PNML" = xyes])
+AC_ARG_ENABLE([test-ProB], [AS_HELP_STRING([--disable-test-ProB],
+               [do not test the ProB front-end])],, enable_test_ProB=$enable_test_all)
+AM_CONDITIONAL([TEST_PROB], [test x"$enable_test_ProB" = xyes])
+AC_ARG_ENABLE([test-MAPA], [AS_HELP_STRING([--disable-test-MAPA],
+               [do not test the MAPA front-end])],, enable_test_MAPA=$enable_test_all)
+AM_CONDITIONAL([TEST_MAPA], [test x"$enable_test_MAPA" = xyes])
+
+# other algorithms
+AC_ARG_ENABLE([test-LTL], [AS_HELP_STRING([--disable-test-LTL],
+               [do not test LTL model checking])],, enable_test_LTL=$enable_test_all)
+AM_CONDITIONAL([TEST_LTL], [test x"$enable_test_LTL" = xyes])
+AC_ARG_ENABLE([test-safety], [AS_HELP_STRING([--disable-test-safety],
+               [do not test safety model checking])],, enable_test_safety=$enable_test_all)
+AM_CONDITIONAL([TEST_SAFETY], [test x"$enable_test_safety" = xyes])
+AC_ARG_ENABLE([test-POR], [AS_HELP_STRING([--disable-test-POR],
+               [do not test Partial Order Reduction])],, enable_test_POR=$enable_test_all)
+AM_CONDITIONAL([TEST_POR], [test x"$enable_test_POR" = xyes])
+AC_ARG_ENABLE([test-DFS_FIFO], [AS_HELP_STRING([--disable-test-DFS-FIFO],
+               [do not test the DFS_FIFO algorithm])],, enable_test_DFS_FIFO=$enable_test_all)
+AM_CONDITIONAL([TEST_DFS_FIFO], [test x"$enable_test_DFS_FIFO" = xyes])
+AC_ARG_ENABLE([test-SCC], [AS_HELP_STRING([--disable-test-SCC],
+               [do not test the SCC algorithms])],, enable_test_SCC=$enable_test_all)
+AM_CONDITIONAL([TEST_SCC], [test x"$enable_test_SCC" = xyes])
+AC_ARG_ENABLE([test-LTS-generation], [AS_HELP_STRING([--disable-test-LTS-generation],
+               [do not test LTS generation])],, enable_test_LTS_generation=$enable_test_all)
+AM_CONDITIONAL([TEST_LTS_GENERATION], [test x"$enable_test_LTS_generation" = xyes])
 
 AC_CONFIG_COMMANDS_POST(
   [ac_configure_args="$ac_configure_args --enable-keep-terminated-procs dnl
@@ -447,11 +543,14 @@ AC_CONFIG_FILES([
        src/ltsmin-lib/Makefile
        src/mc-lib/Makefile
        src/pins-lib/Makefile
+       src/prob-lib/Makefile
+       src/pins-lib/por/Makefile
        src/util-lib/Makefile
        src/vset-lib/Makefile
        src/spg-lib/Makefile
        src/gcf-tool/Makefile
        src/etf-convert/Makefile
+       src/ldd2bdd/Makefile
        src/ltsmin-printtrace/Makefile
        src/ltsmin-compare/Makefile
        src/ltsmin-convert/Makefile
@@ -503,7 +602,12 @@ Configuration:
     PBES     = ${acx_pbes:-NOT FOUND, building without PBES support}
     SCOOP    = ${have_scoop:-NO, either scoop was disabled or ghc/happy/ghc-pkg/hashmap/deepseq could not be found}
     SPINS    = ${acx_spins:-NO, JDK or Ant not found (override with --with-spins)}
-    SYLVAN   = ${have_sylvan:-NO, only on 64-bit systems (override with --with-sylvan)}
+    SPOT     = ${acx_spot:-NO, Spot not found (override with --with-spot)}
+    SYLVAN   = ${have_sylvan:-NO, building without Sylvan/LDD-MC support}
     XMLTO    = ${XMLTO:-NOT FOUND, not building manpages}
+    BOOST    = ${have_boost:-NOT FOUND, not including advanced variable reordering algorithms}
+    VIENNACL = ${have_viennacl:-NO, not including advanced variable reordering algorithms}
+    PNML     = ${have_xml2:-NO, not building pnml (Petri net) front-end}
+    PROB     = ${acx_prob:-NO, either ProB was disabled or CZMQ could not be found}
 ======================================================================
 EOM

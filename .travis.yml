@@ -1,0 +1,277 @@
+language: cpp
+
+compiler:
+- clang
+- gcc
+
+os:
+- linux
+- osx
+
+dist: precise
+
+osx_image: xcode7.2
+
+cache:
+  directories:
+    - $HOME/ltsmin-deps
+    - $HOME/.cabal
+
+matrix:
+  exclude:
+    # This one I am excluding, because we test clang on OSX.
+    - compiler: clang
+      os: linux
+    # This one I am excluding, because xcode and gcc seem to clash big time on everything.
+    # Feel free to do a pull request that fixes this :)
+    # Anyways, gcc is tested on linux.
+    - compiler: gcc
+      os: osx
+      
+# Trigger different builds for different front-ends, to speed up testing (with dejagnu).
+# --disable-dependency-tracking is necessary due to a bug in automake 1.14 i.c.w. make distclean, see:
+# https://stackoverflow.com/questions/21609580/autotools-build-fails-due-to-subdir-objects-option-in-am-init-automake
+env:
+    - CONFIGURE_WITH="--disable-dependency-tracking --enable-werror --disable-test-all"
+      CFLAGS="-DNDEBUG"
+      RELEASE_BUILD="yes"
+    - CONFIGURE_WITH="--disable-dependency-tracking --enable-werror --disable-test-all"
+      DISTCHECK="yes"
+    - CONFIGURE_WITH="--disable-test-all --enable-test-unit             --without-mcrl2 --disable-doxygen-doc --disable-dependency-tracking"
+      CHECK="yes"
+    - CONFIGURE_WITH="--disable-test-all --enable-test-DVE              --without-mcrl2 --disable-doxygen-doc --disable-dependency-tracking"
+      CHECK="yes"
+    - CONFIGURE_WITH="--disable-test-all --enable-test-ETF              --without-mcrl2 --disable-doxygen-doc --disable-dependency-tracking"
+      CHECK="yes"
+    - CONFIGURE_WITH="--disable-test-all --enable-test-Promela          --without-mcrl2 --disable-doxygen-doc --disable-dependency-tracking"
+      CHECK="yes"
+    - CONFIGURE_WITH="--disable-test-all --enable-test-LPS                              --disable-doxygen-doc --disable-dependency-tracking"
+      CHECK="yes"
+    - CONFIGURE_WITH="--disable-test-all --enable-test-PBES                             --disable-doxygen-doc --disable-dependency-tracking"
+      CHECK="yes"
+    - CONFIGURE_WITH="--disable-test-all --enable-test-PNML             --without-mcrl2 --disable-doxygen-doc --disable-dependency-tracking"
+      CHECK="yes"
+    - CONFIGURE_WITH="--disable-test-all --enable-test-ProB             --without-mcrl2 --disable-doxygen-doc --disable-dependency-tracking"
+      CHECK="yes"
+    - CONFIGURE_WITH="--disable-test-all --enable-test-LTL              --without-mcrl2 --disable-doxygen-doc --disable-dependency-tracking"
+      CHECK="yes"
+    - CONFIGURE_WITH="--disable-test-all --enable-test-safety           --without-mcrl2 --disable-doxygen-doc --disable-dependency-tracking"
+      CHECK="yes"
+    - CONFIGURE_WITH="--disable-test-all --enable-test-POR              --without-mcrl2 --disable-doxygen-doc --disable-dependency-tracking"
+      CHECK="yes"
+    - CONFIGURE_WITH="--disable-test-all --enable-test-DFS-FIFO         --without-mcrl2 --disable-doxygen-doc --disable-dependency-tracking"
+      CHECK="yes"
+    - CONFIGURE_WITH="--disable-test-all --enable-test-SCC              --without-mcrl2 --disable-doxygen-doc --disable-dependency-tracking"
+      CHECK="yes"
+    - CONFIGURE_WITH="--disable-test-all --enable-test-LTS-generation                   --disable-doxygen-doc --disable-dependency-tracking"
+      CHECK="yes"
+    
+addons:
+  apt:
+    sources:
+      - hvr-ghc                 # for GHC dynamic packages
+      - ubuntu-toolchain-r-test # for gcc 4.9
+    packages:
+      - gcc-4.9
+      - g++-4.9
+      - libpopt-dev
+      - asciidoc
+      - xmlto
+      - doxygen
+      - libboost-dev
+      - ghc-7.10.3
+      - ghc-7.10.3-dyn
+      - happy-1.19.5
+      - libnuma-dev
+      - liblzma-dev
+      - dejagnu
+      
+before_install:
+  - export CZMQ_VERSION="3.0.2" &&
+    export CZMQ_URL="https://github.com/zeromq/czmq/archive/v$CZMQ_VERSION.tar.gz" &&
+    export DIVINE_VERSION="1.3" &&
+    export DIVINE_COMPILER="gcc-4.9" &&
+    export DIVINE_NAME="divine2-ltsmin-$DIVINE_VERSION-$TRAVIS_OS_NAME-$DIVINE_COMPILER.tgz" &&
+    export DIVINE_URL="https://github.com/utwente-fmt/divine2/releases/download/$DIVINE_VERSION/$DIVINE_NAME" &&
+    export VIENNACL_NAME="ViennaCL-1.7.1" &&
+    export VIENNACL_URL="http://netcologne.dl.sourceforge.net/project/viennacl/1.7.x/$VIENNACL_NAME.tar.gz" &&
+    export GHCVER="7.10.3" &&
+    export HAPPYVER="1.19.5" &&
+    export ZMQ_VERSION="4.1.5" &&
+    export ZMQ_NAME="zeromq-$ZMQ_VERSION" &&
+    export ZMQ_URL="https://github.com/zeromq/zeromq4-1/releases/download/v$ZMQ_VERSION/$ZMQ_NAME.tar.gz" &&
+    export DDD_NAME="ddd" &&
+    export DDD_VERSION="$DDD_NAME-1.8.1" &&
+    export DDD_URL="http://ddd.lip6.fr/download/$DDD_VERSION.tar.gz" &&
+    export MCRL2_NAME="mCRL2.tar.gz" &&
+    export MCRL2_URL="https://raw.githubusercontent.com/utwente-fmt/ltsmin-travis/master/$TRAVIS_OS_NAME/$MCRL2_NAME"
+    export PKG_CONFIG_PATH="$HOME/ltsmin-deps/lib/pkgconfig"
+  - if [ "$TRAVIS_OS_NAME" = "linux" ]; then        
+        export PROB_NAME="ProB.linux64.tar.gz" &&
+        export PROB_URL="https://raw.githubusercontent.com/utwente-fmt/ltsmin-travis/master/linux/$PROB_NAME" &&        
+        export PATH=/opt/ghc/$GHCVER/bin:/opt/happy/$HAPPYVER/bin:$PATH &&
+        export MAKEFLAGS=-j2; fi
+  - if [ "$TRAVIS_OS_NAME" = "osx" ]; then  
+        export PROB_NAME="ProB.mac_os.10.12.x86_64.tar.gz" &&
+        export PROB_URL="https://raw.githubusercontent.com/utwente-fmt/ltsmin-travis/master/osx/$PROB_NAME" &&
+        export MAKEFLAGS=-j1 &&
+        export PKG_CONFIG_PATH="$PKG_CONFIG_PATH:/usr/local/Cellar/libxml2/$(brew list --versions libxml2 | cut -d' ' -f2)/lib/pkgconfig"; fi
+
+install:  
+  # update brew
+  - if [ "$TRAVIS_OS_NAME" = "osx" ]; then brew update && 
+    brew uninstall libtool && 
+    brew install
+    asciidoc
+    xmlto
+    viennacl
+    cmake
+    ant
+    ghc
+    cabal-install
+    popt
+    libtool
+    dejagnu &&
+    export XML_CATALOG_FILES=/usr/local/etc/xml/catalog; fi
+     
+  - if [ "$TRAVIS_OS_NAME" = "osx" -a ! -f "$HOME/.cabal/bin/happy" ]; then
+    cabal update &&
+    cabal install happy &&
+    export PATH="$HOME/.cabal/bin:$PATH"; fi
+  
+  - mkdir -p "$HOME/ltsmin-deps"
+  
+  # set correct compiler
+  - if [ "$CC" = "gcc" ]; then export CC="gcc-4.9"; fi
+  - if [ "$CXX" = "g++" ]; then export CXX="g++-4.9"; fi
+    
+  # install zmq from source, since libzmq3-dev in apt is missing dependencies for a full static LTSmin build (pgm and sodium are missing)
+  # I filed a bug report here: https://github.com/travis-ci/travis-ci/issues/5701
+  - if [ ! -f "$HOME/ltsmin-deps/lib/libzmq.a" ]; then 
+    wget "$ZMQ_URL" -P /tmp &&
+    tar -xf "/tmp/$ZMQ_NAME.tar.gz" -C /tmp &&
+    pushd /tmp/$ZMQ_NAME &&
+    ./autogen.sh &&
+    ./configure --enable-static --enable-shared --prefix="$HOME/ltsmin-deps" --without-libsodium --without-pgm --without-documentation &&
+    make &&
+    make install &&
+    popd; fi
+    
+  # install czmq from source
+  # since czmq is not distributed in Ubuntu.
+  # the LDFLAGS is necessary, because of a bug: https://github.com/zeromq/czmq/issues/1323
+  # the CFLAGS is necessary, because we need to unset NDEBUG: https://github.com/zeromq/czmq/issues/1519
+  - if [ ! -f "$HOME/ltsmin-deps/lib/libczmq.a" ]; then 
+    wget "$CZMQ_URL" -P /tmp &&
+    tar -xf "/tmp/v$CZMQ_VERSION.tar.gz" -C /tmp &&
+    pushd /tmp/czmq-$CZMQ_VERSION &&
+    ./autogen.sh &&
+    ./configure --enable-static --enable-shared --prefix="$HOME/ltsmin-deps" --with-libzmq="$HOME/ltsmin-deps" &&
+    make CFLAGS="" LDFLAGS="-lpthread" &&
+    make install &&
+    popd; fi
+    
+  # install mCRL2
+  - if [ ! -f "$HOME/ltsmin-deps/lib/libmcrl2_core.a" ]; then 
+    wget "$MCRL2_URL" -P "$HOME/ltsmin-deps" &&    
+    tar -xf "$HOME/ltsmin-deps/$MCRL2_NAME" -C "$HOME/ltsmin-deps"; fi
+    
+  # install ProB  
+  - if [ "$TRAVIS_OS_NAME" = "linux" ]; then
+    export PROB_NAME="$PROB_NAME" &&
+    export PROB_URL="$PROB_URL"; fi
+  - if [ "$TRAVIS_OS_NAME" = "osx" ]; then
+    export PROB_NAME="$PROB_NAME" &&
+    export PROB_URL="$PROB_URL"; fi
+  - if [ ! -f "$HOME/ProB/probcli" ]; then 
+    mkdir -p "$HOME/ProB" &&
+    wget "$PROB_URL" -P /tmp && 
+    tar -xf "/tmp/$PROB_NAME" -C "$HOME/ProB"; fi
+
+  # install Divine2
+  - if [ ! -f "$HOME/ltsmin-deps/bin/divine" ]; then
+    wget "$DIVINE_URL" -P /tmp &&
+    tar -xf "/tmp/$DIVINE_NAME" -C "$HOME/ltsmin-deps"; fi
+  
+  # install ViennaCL on linux
+  - if [ ! -d "$HOME/ltsmin-deps/include/viennacl" -a "$TRAVIS_OS_NAME" = "linux" ]; then
+    wget "$VIENNACL_URL" -P /tmp &&
+    tar xf "/tmp/$VIENNACL_NAME.tar.gz" -C /tmp &&
+    cp -R "/tmp/$VIENNACL_NAME/viennacl" "$HOME/ltsmin-deps/include"; fi
+    
+before_script:
+  # export necessary variables
+  # bin
+  - export PATH=$HOME/ltsmin-deps/bin:$HOME/ProB:$PATH
+  # include    
+  - export C_INCLUDE_PATH="$HOME/ltsmin-deps/include:$C_INCLUDE_PATH"
+  # lib (linux)
+  - if [ "$TRAVIS_OS_NAME" = "linux" -a "x$RELEASE_BUILD" != "xyes" ]; then
+    export LD_LIBRARY_PATH="$HOME/ltsmin-deps/lib:$HOME/ProB/lib:$LD_LIBRARY_PATH"; fi
+  # lib (osx)
+  - if [ "$TRAVIS_OS_NAME" = "osx" -a "x$RELEASE_BUILD" != "xyes" ]; then
+    export DYLD_LIBRARY_PATH="$HOME/ltsmin-deps/lib:$HOME/ProB/lib:$DYLD_LIBRARY_PATH" &&
+    export LDFLAGS="-L$HOME/ltsmin-deps/lib"; fi
+  # Move static libraries to a special folder (osx).
+  # This is necessary, because ld on OSX always prefers .dylibs over .a's.
+  # <rant> this is a retarted policy (don't tell me how to link!?) </rant>
+  # During make we can force ld to look in this directory first.
+  - if [ "$TRAVIS_OS_NAME" = "osx" ]; then
+    mkdir "$HOME/static-libs" &&
+    cp "$HOME/ltsmin-deps/lib/libzmq.a" "$HOME/static-libs" &&
+    cp "$HOME/ltsmin-deps/lib/libczmq.a" "$HOME/static-libs" &&
+    cp /usr/local/lib/libgmp.a "$HOME/static-libs" &&
+    cp /usr/local/lib/libpopt.a "$HOME/static-libs" &&
+    cp "/usr/local/Cellar/libxml2/$(brew list --versions libxml2 | cut -d' ' -f2)/lib/libxml2.a" "$HOME/static-libs"; fi
+  # Now do the same on Linux.
+  - if [ "$TRAVIS_OS_NAME" = "linux" ]; then
+    mkdir "$HOME/static-libs" &&
+    cp "$HOME/ltsmin-deps/lib/libzmq.a" "$HOME/static-libs" &&
+    cp "$HOME/ltsmin-deps/lib/libczmq.a" "$HOME/static-libs" &&
+    cp /usr/lib/libnuma.a "$HOME/static-libs" &&
+    cp /usr/lib/x86_64-linux-gnu/libpopt.a "$HOME/static-libs" &&
+    cp /usr/lib/x86_64-linux-gnu/libgmp.a "$HOME/static-libs" &&
+    cp /usr/lib/x86_64-linux-gnu/libltdl.a "$HOME/static-libs" &&
+    cp /usr/lib/x86_64-linux-gnu/libxml2.a "$HOME/static-libs" &&
+    cp /usr/lib/x86_64-linux-gnu/libz.a "$HOME/static-libs"; fi
+
+script:
+  - ./ltsminreconf &&
+    ./configure --prefix=/tmp/dist --with-viennacl="$HOME/ltsmin-deps/include" --without-scoop $CONFIGURE_WITH
+  - if [ "$TRAVIS_OS_NAME" = "osx" -a "x$RELEASE_BUILD" = "xyes" ]; then make LDFLAGS="-Wl,-search_paths_first -L$HOME/static-libs -weak-liconv"; fi # libiconv is necessary for libpopt
+  - if [ "$TRAVIS_OS_NAME" = "linux" -a "x$RELEASE_BUILD" = "xyes" ]; then make LDFLAGS="-L$HOME/static-libs -static-libgcc -static-libstdc++"; fi
+  - if [ "x$CHECK" = "xyes" ]; then make; fi
+  - if [ "x$CHECK" = "xyes" ]; then make check -j1; fi
+  - if [ "x$CHECK" = "xyes" -a $? -ne 0 ]; then cat testsuite/*.log || true; fi
+  - if [ "x$DISTCHECK" = "xyes" ]; then 
+    make distcheck DISTCHECK_CONFIGURE_FLAGS="-with-viennacl=$HOME/ltsmin-deps/include --without-scoop $CONFIGURE_WITH"; fi
+  - if [ -n $TRAVIS_TAG -a "x$RELEASE_BUILD" = "xyes" ]; then
+    make install &&
+    cp "$HOME/ltsmin-deps/bin/divine" /tmp/dist/bin &&
+    cp "$HOME/ltsmin-deps/bin/txt2lps" /tmp/dist/bin &&
+    cp "$HOME/ltsmin-deps/bin/txt2pbes" /tmp/dist/bin &&
+    export distname="ltsmin-$TRAVIS_TAG-$TRAVIS_OS_NAME-$CC" &&
+    pushd /tmp/dist &&
+    tar cfz "$distname.tgz" * &&
+    popd &&
+    make dist &&
+    export LTSMIN_VERSION=$(grep "PACKAGE_VERSION" src/hre/config.h | cut -d" " -f3 | cut -d\" -f2) &&
+    mv "ltsmin-$LTSMIN_VERSION.tar.gz" "ltsmin-$TRAVIS_TAG-source.tgz"; fi
+  
+notifications:
+  email: false
+
+deploy:
+  provider: releases
+  # change this key if you want to upload to your own repository, but don't push upstream!
+  api_key:
+    secure: Uhi06vZvyuuqx9uEif4BQEklwXwtIk5OYSl2Aqwca/xk+wdC8o/tVV19Zf6oiPhn/GUwkgjbyQEhM50BlyeJfUq8sMrIu6H2YMLO+BXfZv3U4VbAJTgTaaYDglFOOdoKpFW+8+8jjycQxj42Qz/ig47pMpNTc3VihgvuKI14WipRh/1fN5zqAChVtLMjL4FXgtnJDyOuZaAi/CPXKaWda1fAq8ToUFhe/fb6sRBUXGuXkHrWA3v939r0cs85Fd/8okifyVxnrlfai/e6jgQYsFFnHLrmgonaaTHM5igSYOA+78Kds5IHjMnjRUUwToKdprX6htV17Gpf8JG3eIBXBFRNYj+3BJAHIi1AgrGVWDFlOu+8r4VopT1oMd7Fo49gZcatvq6GPh4U0RaQ6y1SDFJlKvZAMvjcuNB5H5IqalCS1h93/lJCLuOQ2ZPt588lLcS5JGUCbjZWLAdQ+SQkRu7J6axnOie0wpbNYsUgrZa6g69/Ap3rnGnZ7wplAwtVHRmISM3E4Sxb+Q0DmtPs1bG+0ZehFzBqSh53F3oI3MlR262gkh0F8HTm3y8DUvcmJvaLjgmre19k6ZdjfzssiQAygmarC8Rjg9D06b3SOi/8yZngvBsYiy2ymZSUO6ikxaG0L0pmVZmw71ubkQbU9s2EEtyxzYFs1wqlpMNCl44=
+  file: 
+    - "ltsmin-$TRAVIS_TAG-source.tgz"
+    - "/tmp/dist/$distname.tgz"
+  skip_cleanup: true
+  on:
+    # change this repo slug if you want to upload to your own repository, but don't push upstream!
+    repo: utwente-fmt/ltsmin
+    tags: true
+    condition: "x$RELEASE_BUILD = xyes"

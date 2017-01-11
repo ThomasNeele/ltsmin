@@ -25,19 +25,18 @@
 #    
 #
 
-
-# dependency matrix lib
-SUBDIRS  = dm
-# bignum lib
-SUBDIRS += bignum
-
 # hybrid runtime environment lib
-SUBDIRS += hre-io
+SUBDIRS = hre-io
 SUBDIRS += util-lib
 SUBDIRS += hre
 if HAVE_MPI
 SUBDIRS += hre-mpi
 endif
+
+# dependency matrix lib
+SUBDIRS += dm
+# bignum lib
+SUBDIRS += bignum
 
 SUBDIRS += gcf-tool
 
@@ -60,11 +59,18 @@ endif
 # PINS lib, defining the partitioned next-state interface
 SUBDIRS += pins-lib
 
+if HAVE_PROB
+SUBDIRS += prob-lib
+endif
+
 if HAVE_CADP
 SUBDIRS += pins-open
 endif
 SUBDIRS += pins2lts-dist
 SUBDIRS += torx
+
+# multi-core lib, lockless data structures and a load balancer
+SUBDIRS += mc-lib
 
 # vset (BDD/MDD) lib
 SUBDIRS += vset-lib
@@ -74,20 +80,21 @@ SUBDIRS += spg-lib
 
 SUBDIRS += spg
 
-if HAVE_SYLVAN
-SUBDIRS += pins2lts-sym
-endif
-
-if HAVE_ATOMICS
 # multi-core lib, lockless data structures and a load balancer
 SUBDIRS += mc-lib
 
+if HAVE_SYLVAN
+SUBDIRS += pins2lts-sym
+SUBDIRS += ldd2bdd
+endif
 SUBDIRS += pins2lts-mc
 SUBDIRS += pins2lts-seq
-endif
 
 SUBDIRS += scripts
+
+if TEST_UNIT
 SUBDIRS += tests
+endif
 
 # make
 .DELETE_ON_ERROR:

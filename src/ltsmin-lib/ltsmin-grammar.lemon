@@ -1,6 +1,5 @@
 %include {
 #include <hre/config.h>
-#include <assert.h>
 #include <stdlib.h>
 
 #include <hre/user.h>
@@ -8,6 +7,12 @@
 #include <ltsmin-lib/etf-util.h>
 #include <ltsmin-lib/etf-internal.h>
 #include <ltsmin-lib/ltsmin-parse-env.h>
+/* solves the issue where lemon parses this file
+ with -Werror and -DNDEBUG */
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
+#include <assert.h>
 }
 
 /* Section common parser configuration.
@@ -314,17 +319,19 @@ that can be reused for other languages (e.g. CTL, CTL* and LTL)
 %type expr { ltsmin_expr_t }
 %destructor expr {
     (void)env;
-     LTSminExprDestroy($$);
+     LTSminExprDestroy($$, 1);
 }
 
 input ::= EXPR expr(E) . {
     (void)E;
-    LTSminLogExpr(info,"Expression is: ",E,env);
     env->expr=E;
 }
 
 %left CONSTANT .
 %right QUANTIFIER .
+%left BIN11 .
+%left BIN10 .
+%left BIN9 .
 %left PREFIX9  .
 %right POSTFIX9 .
 %left BIN8 .
@@ -394,6 +401,15 @@ expr(E) ::= expr(E1) BIN7(OP) expr(E2) . {
     E = LTSminExpr(BINARY_OP, LTSminBinaryToken(env, OP), OP, E1, E2);
 }
 expr(E) ::= expr(E1) BIN8(OP) expr(E2) . {
+    E = LTSminExpr(BINARY_OP, LTSminBinaryToken(env, OP), OP, E1, E2);
+}
+expr(E) ::= expr(E1) BIN9(OP) expr(E2) . {
+    E = LTSminExpr(BINARY_OP, LTSminBinaryToken(env, OP), OP, E1, E2);
+}
+expr(E) ::= expr(E1) BIN10(OP) expr(E2) . {
+    E = LTSminExpr(BINARY_OP, LTSminBinaryToken(env, OP), OP, E1, E2);
+}
+expr(E) ::= expr(E1) BIN11(OP) expr(E2) . {
     E = LTSminExpr(BINARY_OP, LTSminBinaryToken(env, OP), OP, E1, E2);
 }
 

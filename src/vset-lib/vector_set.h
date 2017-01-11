@@ -105,6 +105,12 @@ typedef void(*vset_update_cb)(vset_t set, void *context, int *e);
 extern void vset_update(vset_t dst, vset_t set, vset_update_cb cb, void *context);
 
 /**
+\brief Update a set with new states, obtained by calling cb for every state in set.
+This is a sequential operation.
+*/
+extern void vset_update_seq(vset_t dst, vset_t set, vset_update_cb cb, void *context);
+
+/**
 \brief Test if an element is a member.
 */
 extern int vset_member(vset_t set,const int* e);
@@ -216,7 +222,15 @@ extern void vset_zip(vset_t dst,vset_t src);
 \param elements Pointer to bignum that will contain the count; this bignum
 is initialized by vset_count.
 */
-extern void vset_count(vset_t set,long *nodes,bn_int_t *elements);
+extern void vset_count(vset_t set,long *nodes,double *elements);
+
+extern void vset_count_precise(vset_t set,long nodes,bn_int_t *elements);
+
+extern int vdom_supports_precise_counting(vdom_t dom);
+
+extern void vset_ccount(vset_t set,long *nodes,long double *elements);
+
+extern int vdom_supports_ccount(vdom_t dom);
 
 /**
 \brief Create a relation
@@ -273,6 +287,12 @@ typedef void(*vrel_update_cb)(vrel_t rel, void *context, int *e);
 extern void vrel_update(vrel_t rel, vset_t set, vrel_update_cb cb, void *context);
 
 /**
+\brief Update a relation with new transitions, obtained by calling cb for every state in set.
+This is a sequential operation.
+*/
+extern void vrel_update_seq(vrel_t rel, vset_t set, vrel_update_cb cb, void *context);
+
+/**
 \brief Add an element to a relation, with a copy vector.
 */
 extern void vrel_add_cpy(vrel_t rel,const int* src,const int* dst,const int* cpy);
@@ -288,12 +308,14 @@ extern void vrel_add_act(vrel_t rel,const int* src,const int* dst,const int* cpy
 \param elements Pointer to bignum that will contain the count; this bignum
 is initialized by vset_count.
 */
-extern void vrel_count(vrel_t rel,long *nodes,bn_int_t *elements);
+extern void vrel_count(vrel_t rel,long *nodes,double *elements);
 
 /**
 \brief dst := { y | exists x in src : x rel y }
 */
 extern void vset_next(vset_t dst,vset_t src,vrel_t rel);
+
+extern void vset_next_union(vset_t dst,vset_t src,vrel_t rel,vset_t uni);
 
 /**
 \brief  univ = NULL => dst := { x | exists y in src : x rel y }
@@ -375,11 +397,6 @@ void vdom_save(FILE *f, vdom_t dom);
 int vdom_separates_rw(vdom_t dom);
 
 /**
-\brief returns whether the vset implementation supports copying values.
-*/
-int vdom_supports_cpy(vdom_t dom);
-
-/**
 \brief sets the name of the ith variable.
 */
 void vdom_set_name(vdom_t dom, int i, char* name);
@@ -388,6 +405,24 @@ void vdom_set_name(vdom_t dom, int i, char* name);
 \brief get the name of the ith variable.
 */
 char* vdom_get_name(vdom_t dom, int i);
+
+int _cache_diff();
+
+typedef void (*vset_visit_pre_cb) (int terminal, int val, int cached, void* result, void* context);
+typedef void (*vset_visit_init_context_cb) (void* context, void* parent, int succ);
+typedef void (*vset_visit_post_cb) (int val, void* context, int* cache, void** result);
+typedef void (*vset_visit_cache_success_cb) (void* context, void* result);
+
+typedef struct vset_visit_callbacks_s {
+    vset_visit_pre_cb vset_visit_pre;
+    vset_visit_init_context_cb vset_visit_init_context;
+    vset_visit_post_cb vset_visit_post;
+    vset_visit_cache_success_cb vset_visit_cache_success;
+} vset_visit_callbacks_t;
+
+extern void vset_visit_par(vset_t set, vset_visit_callbacks_t* cbs, size_t ctx_size, void* context, int cache_op);
+
+extern void vset_visit_seq(vset_t set, vset_visit_callbacks_t* cbs, size_t ctx_size, void* context, int cache_op);
 
 //@}
 

@@ -17,6 +17,12 @@ libltsmin_la_SOURCES += exp-grammar.c exp-grammar.h
 libltsmin_la_SOURCES += exp-lexer.c exp-lexer.h
 libltsmin_la_SOURCES += exp-lexer.l
 libltsmin_la_SOURCES += ltl2ba-lex.c ltl2ba-lex.h
+libltsmin_la_SOURCES += ltl2ba-lex-helper.c ltl2ba-lex-helper.h
+
+if HAVE_SPOT
+libltsmin_la_SOURCES += ltl2spot.cpp ltl2spot.h
+endif
+
 libltsmin_la_SOURCES += lts-type.c lts-type.h
 libltsmin_la_SOURCES += ltsmin-buchi.h
 libltsmin_la_SOURCES += ltsmin-parse-env.h
@@ -26,10 +32,18 @@ libltsmin_la_SOURCES += ltsmin-grammar.c ltsmin-grammar.h
 libltsmin_la_SOURCES += ltsmin-lexer.c ltsmin-lexer.h
 libltsmin_la_SOURCES += ltsmin-lexer.l
 libltsmin_la_SOURCES += ltsmin-standard.h
+libltsmin_la_SOURCES += ltsmin-type-system.c ltsmin-type-system.h
 
 libltsmin_la_LIBADD   = $(top_builddir)/ltl2ba/libltl2ba.la
+libltsmin_la_LIBADD  += ../dm/libdm.la
+libltsmin_la_LIBADD  += $(SPOT_LDFLAGS) $(SPOT_LIBS)
+
+libltsmin_la_LIBS     = $(SPOT_LIBS)
+
 libltsmin_la_CPPFLAGS = -DNXT
-libltsmin_la_CPPFLAGS+= -I${top_srcdir}/ltl2ba $(AM_CPPFLAGS)
+libltsmin_la_CPPFLAGS+= -I${top_srcdir}/ltl2ba $(AM_CPPFLAGS) 
+libltsmin_la_CPPFLAGS+= -I${top_srcdir}
+libltsmin_la_CPPFLAGS+=  $(SPOT_CPPFLAGS)
 
 # mu-calculus parser
 libmucalc_la_SOURCES  =
@@ -66,6 +80,8 @@ CLEANFILES += mucalc-grammar.out
 MAINTAINERCLEANFILES =
 MAINTAINERCLEANFILES += ltsmin-tokens.c ltsmin-tokens.h
 LEMON_FLAGS = -s
+
+.NOTPARALLEL:
 
 %.c %.h: %.lemon lempar.c
 	cd $(top_builddir)/lemon && $(MAKE) $(AM_MAKEFLAGS) lemon$(EXEEXT)

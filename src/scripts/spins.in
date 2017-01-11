@@ -27,20 +27,23 @@ fi
 
 promela_file=
 no_compile=0
+overcommit=1
 
 for option in ${1+"$@"}; do
     if [ "${option:0:2}" == "-I" ]; then
         no_compile=1
     elif [ "${option:0:1}" != "-" ]; then
         promela_file="$option"
+    elif [ "${option:0:2}" == "-o" ]; then
+        overcommit=0
     fi
 done
 
-if [ -z "$promela_file" ]; then
-    echo "usage: spins [options] promela_file" ;
-    echo "options will be passed to GCC"
-    exit 1
-fi
+#if [ -z "$promela_file" ]; then
+#    echo "usage: spins [options] promela_file" ;
+#    echo "options will be passed to GCC"
+#    exit 1
+#fi
 
 promela_name=`basename $promela_file`
 output_file="${promela_name}.spins.c"
@@ -49,22 +52,27 @@ if [ -f "$output_file" ]; then
     rm -f "$output_file";
 fi
 
-# Total memory in KB
-if [ -e /proc/meminfo ]; then 
-    totalMemKB=`awk '/MemTotal:/ { print $2 }' /proc/meminfo`
-    totalMemMB=$(( $totalMemKB/1024 ))
-else
-    totalMem=`top -l 1 | grep PhysMem:`
-    totalMemMB=`echo "$totalMem" | sed "s/PhysMem:[ ]*\([0-9]*\)M.*/\1/g"`
-    if [ "$totalMem" = "$totalMemMB" ]; then
-        totalMemGB=`echo "$totalMem" | sed "s/PhysMem:[ ]*\([0-9]*\)G.*/\1/g"`
-        totalMemMB=$(( $totalMemGB*1024 ))
+if [ $overcommit -eq 1 ]; then
+    # Total memory in KB
+    if [ -e /proc/meminfo ]; then 
+        totalMemKB=`awk '/MemTotal:/ { print $2 }' /proc/meminfo`
+        totalMemMB=$(( $totalMemKB/1024 ))
+    else
+        totalMem=`top -l 1 | grep PhysMem:`
+        totalMemMB=`echo "$totalMem" | sed "s/PhysMem:[ ]*\([0-9]*\)M.*/\1/g"`
+        if [ "$totalMem" = "$totalMemMB" ]; then
+            totalMemGB=`echo "$totalMem" | sed "s/PhysMem:[ ]*\([0-9]*\)G.*/\1/g"`
+            totalMemMB=$(( $totalMemGB*1024 ))
+        fi
     fi
-fi
-heapMB=$(( $totalMemMB*100/75 ))
-commitedMB=$(( $heapMB/2 ))
+    heapMB=$(( $totalMemMB*75/100 ))
+    commitedMB=$(( $heapMB/2 ))
 
-java -Xms${commitedMB}m -Xmx${heapMB}m -Xss64m -cp $CP spins.Compile ${1+"$@"}
+    java -Xms${commitedMB}m -Xmx${heapMB}m -Xss64m -cp $CP spins.Compile ${1+"$@"}
+else
+    java -cp $CP spins.Compile ${1+"$@"}
+fi
+
 ERROR=$?
 if [ $ERROR -ne 0 ]; then
     echo "Compilation of $promela_file failed"
@@ -76,7 +84,7 @@ if [ $no_compile == 1 ]; then
     exit 0
 fi
 
-gcc -fPIC -shared -O2 -ggdb $CFLAGS $output_file -o $promela_name.spins \
+gcc -fPIC -shared -O2 -ggdb $CFLAGS -pthread $output_file -o $promela_name.spins \
     -Wno-parentheses-equality \
     -Wno-initializer-overrides \
     -Wno-unused-but-set-variable \

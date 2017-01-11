@@ -196,13 +196,12 @@ static void write_chunk_tables(lts_file_t file){
         value_table_t values=lts_file_get_table(file,i);
         switch(lts_type_get_format(ltstype,i)){
         case LTStypeDirect:
-            if (values && VTgetCount(values)!=0) {
-                Print(error,"direct type %s has table",type_name);
-            }
-            break;
         case LTStypeRange:
-            if (values) {
-                Print(error,"ranged type %s has table",type_name);
+        case LTStypeBool:
+        case LTStypeTrilean:
+        case LTStypeSInt32:
+            if (values && VTgetCount(values)!=0) {
+                Print(error,"non-chunk type %s has table",type_name);
             }
             break;
         case LTStypeChunk:
@@ -215,14 +214,24 @@ static void write_chunk_tables(lts_file_t file){
                 char stream_name[1024];
                 sprintf(stream_name,"CT-%d",i);
                 ds=arch_write(file->archive,stream_name);
-                int element_count=VTgetCount(values);
+                int element_count = VTgetCount(values);
                 Warning(debug,"type %d has %d elements",i,element_count);
-                for(int j=0;j<element_count;j++){
-                    chunk c=VTgetChunk(values,j);
-                    DSwriteVL(ds,c.len);
-                    DSwrite(ds,c.data,c.len);
+
+                int last_idx = 0;
+                table_iterator_t it = VTiterator (values);
+                while (IThasNext(it)) {
+                    chunk c = ITnext (it);
+                    int idx = VTputChunk (values, c);
+                    while (last_idx < idx) { // fill non-dense indices
+                        DSwriteVL (ds, 0);
+                        DSwrite (ds, "", 0);
+                        last_idx++;
+                    }
+                    DSwriteVL (ds, c.len);
+                    DSwrite (ds, c.data, c.len);
+                    last_idx++;
                 }
-                DSclose(&ds);
+                DSclose (&ds);
             }
             break;
         }
@@ -336,6 +345,9 @@ static void write_header(lts_file_t file){
         switch(lts_type_get_format(ltstype,i)){
         case LTStypeDirect:
         case LTStypeRange:
+        case LTStypeBool:
+        case LTStypeTrilean:
+        case LTStypeSInt32:
             DSwriteU32(fs,0);
             break;
         case LTStypeChunk:

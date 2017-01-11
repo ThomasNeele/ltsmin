@@ -14,21 +14,21 @@
 
 static int statebits = 16;
 static int actionbits = 16;
-static int datasize = 23;
+static int tablesize = 24;
 static int maxtablesize = 28;
-static int cachesize = 24;
-static int maxcachesize = 28;
+static int cachesize = 23;
+static int maxcachesize = 27;
 static int granularity = 1;
-static int report_gc = 0;
+static char* sizes = NULL;
 
 struct poptOption sylvan_options[] = {
-    { "sylvan-bits",0, POPT_ARG_INT|POPT_ARGFLAG_SHOW_DEFAULT, &statebits, 0, "set number of bits per integer in the state vector","<bits>"},
-    { "sylvan-tablesize",0, POPT_ARG_INT|POPT_ARGFLAG_SHOW_DEFAULT, &datasize , 0 , "set initial size of BDD table to 1<<datasize","<datasize>"},
-    { "sylvan-maxtablesize",0, POPT_ARG_INT|POPT_ARGFLAG_SHOW_DEFAULT, &maxtablesize , 0 , "set maximum size of BDD table to 1<<maxsize","<maxtablesize>"},
-    { "sylvan-cachesize",0, POPT_ARG_INT|POPT_ARGFLAG_SHOW_DEFAULT, &cachesize , 0 , "set initial size of memoization cache to 1<<cachesize","<cachesize>"},
-    { "sylvan-maxcachesize",0, POPT_ARG_INT|POPT_ARGFLAG_SHOW_DEFAULT, &maxcachesize , 0 , "set maximum size of memoization cache to 1<<cachesize","<maxcachesize>"},
-    { "sylvan-granularity",0, POPT_ARG_INT|POPT_ARGFLAG_SHOW_DEFAULT, &granularity , 0 , "only use memoization cache for every 1/granularity BDD levels","<granularity>"},
-    { "sylvan-report-gc", 0, POPT_ARG_NONE, &report_gc, 0, "report when garbage collection starts/finishes", 0},
+    { "sylvan-bits", 0, POPT_ARG_INT|POPT_ARGFLAG_SHOW_DEFAULT, &statebits, 0, "set number of bits per integer in the state vector", "<bits>"},
+    { "sylvan-sizes", 0, POPT_ARG_STRING, &sizes, 0, "set nodes table and operation cache sizes (powers of 2)", "<tablesize>,<tablemax>,<cachesize>,<cachemax>"},
+    { "sylvan-tablesize", 0, POPT_ARG_INT|POPT_ARGFLAG_SHOW_DEFAULT, &tablesize , 0 , "set initial size of BDD table to 1<<tablesize", "<tablesize>"},
+    { "sylvan-maxtablesize", 0, POPT_ARG_INT|POPT_ARGFLAG_SHOW_DEFAULT, &maxtablesize , 0 , "set maximum size of BDD table to 1<<maxsize", "<maxtablesize>"},
+    { "sylvan-cachesize", 0, POPT_ARG_INT|POPT_ARGFLAG_SHOW_DEFAULT, &cachesize , 0 , "set initial size of operation cache to 1<<cachesize", "<cachesize>"},
+    { "sylvan-maxcachesize", 0, POPT_ARG_INT|POPT_ARGFLAG_SHOW_DEFAULT, &maxcachesize , 0 , "set maximum size of operation cache to 1<<cachesize", "<maxcachesize>"},
+    { "sylvan-granularity", 0, POPT_ARG_INT|POPT_ARGFLAG_SHOW_DEFAULT, &granularity , 0 , "only use operation cache every <granularity> BDD levels", "<granularity>"},
     POPT_TABLEEND
 };
 
@@ -499,19 +499,19 @@ set_copy_match(vset_t dst, vset_t src, int p_len, int* proj, int*match)
 }
 
 static void
-set_count(vset_t set, long *nodes, bn_int_t *elements) 
+set_count(vset_t set, long *nodes, double *elements)
 {
     LACE_ME;
     if (nodes != NULL) *nodes = sylvan_nodecount(set->bdd);
-    if (elements != NULL) bn_double2int((double)sylvan_satcount(set->bdd, set->state_variables), elements);
+    if (elements != NULL) *elements = (double) sylvan_satcount(set->bdd, set->state_variables);
 }
 
 static void
-rel_count(vrel_t rel, long *nodes, bn_int_t *elements)
+rel_count(vrel_t rel, long *nodes, double *elements)
 {
     LACE_ME;
     if (nodes != NULL) *nodes = sylvan_nodecount(rel->bdd);
-    if (elements != NULL) bn_double2int((double)sylvan_satcount(rel->bdd, rel->all_action_variables), elements);
+    if (elements != NULL) *elements = (double)sylvan_satcount(rel->bdd, rel->all_action_variables);
 }
 
 /**
@@ -581,11 +581,14 @@ set_prev(vset_t dst, vset_t src, vrel_t rel, vset_t univ)
     assert(dst->state_variables == src->state_variables);
 
     if (dst == univ) {
-        Abort("Do not call set_prev with dst == univ");
+        BDD tmp = sylvan_relprev(rel->bdd, src->bdd, rel->all_variables);
+        bdd_refs_push(tmp);
+        dst->bdd = sylvan_and(tmp, univ->bdd);
+        bdd_refs_pop(1);
+    } else {
+        dst->bdd = sylvan_relprev(rel->bdd, src->bdd, rel->all_variables);
+        dst->bdd = sylvan_and(dst->bdd, univ->bdd);
     }
-
-    dst->bdd = sylvan_relprev(rel->bdd, src->bdd, rel->all_variables);
-    set_intersect(dst, univ);
 }
 
 /**
@@ -707,7 +710,7 @@ rel_add_cpy(vrel_t rel, const int *src, const int *dst, const int *cpy)
 
     // Some custom code to create the BDD representing the dst+cpy structure
     BDD dst_bdd = sylvan_true;
-    for (int i=rel->w_k; i>=0; i--) {
+    for (int i=rel->w_k-1; i>=0; i--) {
         int k = rel->w_proj[i];
         if (cpy && cpy[i]) {
             // take copy of read
@@ -727,7 +730,6 @@ rel_add_cpy(vrel_t rel, const int *src, const int *dst, const int *cpy)
             }
         }
     }
-    sylvan_test_isbdd(dst_bdd);
     bdd_refs_push(dst_bdd);
 
     // concatenate src and dst
@@ -888,12 +890,6 @@ separates_rw()
     return 1;
 }
 
-static int
-supports_cpy()
-{
-    return 1;
-}
-
 static void
 dom_set_function_pointers(vdom_t dom)
 {
@@ -944,7 +940,6 @@ dom_set_function_pointers(vdom_t dom)
     dom->shared.rel_destroy=rel_destroy;
 
     dom->shared.separates_rw=separates_rw;
-    dom->shared.supports_cpy=supports_cpy;
 }
 
 VOID_TASK_0(gc_start)
@@ -958,26 +953,68 @@ VOID_TASK_0(gc_end)
 }
 
 /**
+ * Small helper function
+ */
+static char*
+to_h(double size, char *buf)
+{
+    const char* units[] = {"B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB"};
+    int i = 0;
+    for (;size>1024;size/=1024) i++;
+    sprintf(buf, "%.*f %s", i, size, units[i]);
+    return buf;
+}
+
+/**
+ * Function to initialize Sylvan, also used by vset_lddmc
+ */
+void
+ltsmin_initialize_sylvan()
+{
+    static int initialized=0;
+    if (initialized) return;
+    initialized=1;
+
+    if (sizes != NULL) {
+        // parse it...
+        if (sscanf(sizes, "%d,%d,%d,%d", &tablesize, &maxtablesize, &cachesize, &maxcachesize) != 4) {
+            Abort("Invalid string for --sylvan-sizes, try e.g. --sylvan-sizes=23,28,22,27");
+        }
+        if (tablesize < 10 || maxtablesize < 10 || cachesize < 10 || maxcachesize < 10 ||
+            tablesize > 40 || maxtablesize > 40 || cachesize > 40 || maxcachesize > 40) {
+            Abort("Invalid string for --sylvan-sizes, must be between 10 and 40");
+        }
+        if (tablesize > maxtablesize) {
+            Abort("Invalid string for --sylvan-sizes, tablesize is larger than maxtablesize");
+        }
+        if (cachesize > maxcachesize) {
+            Abort("Invalid string for --sylvan-sizes, cachesize is larger than maxcachesize");
+        }
+    }
+
+    char buf[32];
+    to_h((1ULL<<maxtablesize)*24+(1ULL<<maxcachesize)*36, buf);
+    Warning(info, "Sylvan allocates %s virtual memory for nodes table and operation cache.", buf);
+    to_h((1ULL<<tablesize)*24+(1ULL<<cachesize)*36, buf);
+    Warning(info, "Initial nodes table and operation cache requires %s.", buf);
+
+    // Call initializator of library (if needed)
+    sylvan_init_package(1LL<<tablesize, 1LL<<maxtablesize, 1LL<<cachesize, 1LL<<maxcachesize);
+    sylvan_set_granularity(granularity);
+    sylvan_gc_hook_pregc(TASK(gc_start));
+    sylvan_gc_hook_postgc(TASK(gc_end));
+}
+
+/**
  * Create a domain with object size n
  */
 vdom_t
 vdom_create_sylvan(int n)
 {
-    LACE_ME;
+    Warning(info, "Creating a Sylvan domain.");
 
-    Warning(info,"Creating a Sylvan domain.");
-
-    // Call initializator of library (if needed)
-    static int initialized=0;
-    if (!initialized) {
-        sylvan_init_package(1LL<<datasize, 1LL<<maxtablesize, 1LL<<cachesize, 1LL<<maxcachesize);
-        sylvan_init_bdd(granularity);
-        if (report_gc) {
-            sylvan_gc_add_mark(0, TASK(gc_start));
-            sylvan_gc_add_mark(40, TASK(gc_end));
-        }
-        initialized=1;
-    }
+    ltsmin_initialize_sylvan();
+    sylvan_init_mtbdd();
 
     // Create data structure of domain
     vdom_t dom = (vdom_t)RTmalloc(sizeof(struct vector_domain));
@@ -993,6 +1030,8 @@ vdom_create_sylvan(int n)
             prime_vars[i*statebits+j] = 2*(i*statebits+j)+1;
         }
     }
+
+    LACE_ME;
 
     dom->state_variables = sylvan_ref(sylvan_set_fromarray(state_vars, statebits * n));
     dom->prime_variables = sylvan_ref(sylvan_set_fromarray(prime_vars, statebits * n));

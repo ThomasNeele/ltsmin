@@ -2,8 +2,13 @@
 #ifndef HRE_USER_H
 #define HRE_USER_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif /* __cplusplus */
+
 #include <popt.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 
@@ -340,6 +345,9 @@ extern char* HREstrdup(const char *str);
  */
 extern void RTparseOptions(const char* argline,int *argc_p,char***argv_p);
 
+#ifdef __cplusplus
+}
+#endif /* __cplusplus */
 
 #endif
 

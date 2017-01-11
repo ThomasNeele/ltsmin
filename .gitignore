@@ -10,6 +10,10 @@ TAGS
 config.h.in
 .libs/
 .metadata/
+.project
+.cproject
+.settings
+*.dirstamp
 aclocal.m4
 autom4te.cache/
 autotools/
@@ -30,6 +34,6 @@ include/
 /src/ltsmin-lib/mucalc-grammar.out
 /src/ltsmin-lib/mucalc-lexer.c
 /src/ltsmin-lib/mucalc-lexer.h
-/examples/brp.lps
+/examples/*.lps
 /examples/brp.pbes
-/examples/ieee-11073.lps
+nbproject

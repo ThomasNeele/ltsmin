@@ -12,7 +12,7 @@ typedef struct ta_alg_local_s {
     cndfs_alg_local_t   cndfs;
     lm_loc_t            lloc;       // Lattice location (serialized by state-info)
     fset_t             *cyan;       // Cyan states
-    fset_t             *pink;       // Pink states
+    //fset_t             *pink;       // Pink states
     fset_t             *cyan2;      // Cyan states
     lm_loc_t            added_at;   // successor is added at location
     lm_loc_t            last;       // last tombstone location
@@ -250,6 +250,7 @@ ta_cndfs_previous (wctx_t *ctx, state_info_t *s)
     }
     void              *data;
     int res = fset_find (loc->cyan2, &hash, &s->ref, &data, false);
+    HREassert (res != FSET_FULL, "Cyan2 table full");
     HREassert (res, "state %zu not in Cyan2 table", s->ref);
     *(lm_loc_t *)data = loc->lloc;      // write new current pointer to hash map
 }
@@ -262,6 +263,7 @@ ta_cndfs_subsumes_cyan (wctx_t *ctx, state_info_t *s)
     hash32_t            hash = ref_hash (s->ref);
     void               *data;
     int res = fset_find (ta_loc->cyan2, &hash, &s->ref, &data, false);
+    HREassert (res != FSET_FULL, "Cyan2 table full");
     ta_loc->lloc = *(lm_loc_t *)data;
     if (!res)
         return false;
@@ -284,7 +286,6 @@ static void
 ta_cndfs_handle_nonseed_accepting (wctx_t *ctx)
 {
     alg_local_t        *loc = ctx->local;
-    ta_alg_local_t     *ta_loc = (ta_alg_local_t *) ctx->local;
     cndfs_alg_local_t  *cndfs_loc = (cndfs_alg_local_t *) ctx->local;
     size_t              nonred, accs;
     nonred = accs = dfs_stack_size (cndfs_loc->out_stack);
@@ -314,10 +315,10 @@ ta_cndfs_handle_nonseed_accepting (wctx_t *ctx)
         //remove_state (loc->pink, ctx->state);
     }
     if (pre)
-        fset_clear (ta_loc->pink);
+        fset_clear (cndfs_loc->pink);
     //HREassert (fset_count(loc->pink) == 0, "Pink set not empty: %zu", fset_count(loc->pink));
-    if (fset_count(ta_loc->pink) != 0)
-        Warning (info, "Pink set not empty: %zu", fset_count(ta_loc->pink));
+    if (fset_count(cndfs_loc->pink) != 0)
+        Warning (info, "Pink set not empty: %zu", fset_count(cndfs_loc->pink));
 }
 
 static inline bool
@@ -349,11 +350,11 @@ ta_cndfs_handle_red (void *arg, state_info_t *successor, transition_info_t *ti, 
 {
     wctx_t             *ctx = (wctx_t *) arg;
     alg_local_t        *loc = ctx->local;
-    ta_alg_local_t     *ta_loc = (ta_alg_local_t *) ctx->local;
+    cndfs_alg_local_t  *cndfs_loc = (cndfs_alg_local_t *) ctx->local;
     /* Find cycle back to the seed */
     if ( ta_cndfs_is_cyan(ctx, successor, NULL, false) )
         ndfs_report_cycle (ctx->run, ctx->model, loc->stack, successor);
-    if ( !ta_cndfs_has_state(ta_loc->pink, successor, false) //&&
+    if ( !ta_cndfs_has_state(cndfs_loc->pink, successor, false) //&&
          /*!ta_cndfs_subsumed(ctx, successor, LM_RED)*/ ) {
         raw_data_t stack_loc = dfs_stack_push (loc->stack, NULL);
         state_info_serialize (successor, stack_loc);
@@ -364,7 +365,7 @@ ta_cndfs_handle_red (void *arg, state_info_t *successor, transition_info_t *ti, 
 static inline int
 is_acc (wctx_t* ctx, state_info_t *si)
 {
-    return GBbuchiIsAccepting (ctx->model, state_info_state(si));
+    return pins_state_is_accepting (ctx->model, state_info_state(si));
 }
 
 static void
@@ -417,17 +418,16 @@ ta_cndfs_red (wctx_t *ctx, ref_t seed, lattice_t l_seed)
 {
     alg_local_t        *loc = ctx->local;
     cndfs_alg_local_t  *cndfs_loc = (cndfs_alg_local_t *) ctx->local;
-    ta_alg_local_t     *ta_loc = (ta_alg_local_t *) ctx->local;
     size_t              seed_level = dfs_stack_nframes (loc->stack);
     while ( !run_is_stopped(ctx->run) ) {
         raw_data_t          state_data = dfs_stack_top (loc->stack);
         if (NULL != state_data) {
             state_info_deserialize (ctx->state, state_data);
             if ( !ta_cndfs_subsumed(ctx, ctx->state, LM_RED) &&
-                 !ta_cndfs_has_state(ta_loc->pink, ctx->state, true) ) {
+                 !ta_cndfs_has_state(cndfs_loc->pink, ctx->state, true) ) {
                 dfs_stack_push (cndfs_loc->in_stack, state_data);
                 if ( ctx->state->ref != seed && ctx->state->lattice != l_seed &&
-                     GBbuchiIsAccepting(ctx->model, state_info_state(ctx->state)) )
+                     pins_state_is_accepting(ctx->model, state_info_state(ctx->state)) )
                     dfs_stack_push (cndfs_loc->out_stack, state_data);
                 ta_cndfs_explore_state_red (ctx);
             } else {
@@ -502,7 +502,7 @@ ta_cndfs_blue (run_t *run, wctx_t *ctx)
                 int red = ta_cndfs_mark (ctx, ctx->state, LM_RED);
                 loc->counters.allred += red;
                 loc->red.allred += 1 - red;
-            } else if ( GBbuchiIsAccepting(ctx->model, state_info_state (ctx->state)) ) {
+            } else if ( pins_state_is_accepting(ctx->model, state_info_state (ctx->state)) ) {
                 ta_cndfs_red (ctx, ctx->state->ref, ctx->state->lattice);
                 ta_cndfs_handle_nonseed_accepting (ctx);
             } else if (all_red && ctx->counters->level_cur > 0 &&
@@ -521,7 +521,6 @@ ta_cndfs_local_init   (run_t *run, wctx_t *ctx)
     ta_alg_local_t         *loc = RTmallocZero (sizeof(ta_alg_local_t));
     ctx->local = (alg_local_t *) loc;
     loc->cyan = fset_create (sizeof(struct val_s), 0, 10, 28);
-    loc->pink = fset_create (sizeof(struct val_s), 0, FSET_MIN_SIZE, 20);
     loc->cyan2= fset_create (sizeof(ref_t), sizeof(void *), 10, 20);
 
     // Extend state info with a lattice location
@@ -550,7 +549,7 @@ ta_cndfs_destroy   (run_t *run, wctx_t *ctx)
 void
 ta_cndfs_destroy_local   (run_t *run, wctx_t *ctx)
 {
-    (void) run; (void) ctx;
+    cndfs_local_deinit (run, ctx);
 }
 
 void
@@ -594,8 +593,7 @@ ta_cndfs_reduce   (run_t *run, wctx_t *ctx)
     if (W >= 4 || !log_active(infoLong)) return;
 
     if (Strat_TA & strategy[0]) {
-        fset_print_statistics (ta_loc->cyan, "Cyan set");
-        fset_print_statistics (ta_loc->pink, "Pink set");
+        fset_print_statistics (ta_loc->cyan, "Cyan stack set:");
     }
 }
 
@@ -605,7 +603,7 @@ ta_cndfs_shared_init   (run_t *run)
     set_alg_local_init (run->alg, ta_cndfs_local_init);
     set_alg_global_init (run->alg, ta_cndfs_global_init);
     set_alg_global_deinit (run->alg, ta_cndfs_destroy);
-    set_alg_local_deinit (run->alg, ta_cndfs_destroy);
+    set_alg_local_deinit (run->alg, ta_cndfs_destroy_local);
     set_alg_print_stats (run->alg, ta_cndfs_print_stats);
     set_alg_run (run->alg, ta_cndfs_blue);
     set_alg_reduce (run->alg, ta_cndfs_reduce);
